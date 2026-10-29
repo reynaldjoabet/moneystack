@@ -1,10 +1,13 @@
+import Dependencies.Versions
+
 ThisBuild / scalaVersion := "3.9.0"
 ThisBuild / organization := "io.moneystack"
 ThisBuild / version      := "0.1.0"
 
 lazy val commonSettings = Seq(
   scalacOptions ++= Seq(
-    "-encoding", "UTF-8",
+    "-encoding",
+    "UTF-8",
     "-no-indent",
     "-deprecation",
     "-feature",
@@ -13,13 +16,14 @@ lazy val commonSettings = Seq(
     "-Wvalue-discard",
     "-Wnonunit-statement",
     "-Xkind-projector",
-    "-Xmax-inlines", "64"
+    "-Xmax-inlines",
+    "64"
   )
 )
 
 lazy val testDeps = Seq(
-  "org.scalameta" %% "munit"             % V.munit   % Test,
-  "org.typelevel" %% "munit-cats-effect" % V.munitCE % Test
+  "org.scalameta" %% "munit"             % Versions.munit   % Test,
+  "org.typelevel" %% "munit-cats-effect" % Versions.munitCE % Test
 )
 
 /** Refined scalar types shared by every module. */
@@ -28,7 +32,7 @@ lazy val core = (project in file("modules/core"))
     commonSettings,
     name := "moneystack-core",
     libraryDependencies ++= Seq(
-      "io.github.iltotore" %% "iron" % V.iron
+      "io.github.iltotore" %% "iron" % Versions.iron
     )
   )
 
@@ -39,13 +43,13 @@ lazy val platform = (project in file("modules/platform"))
     commonSettings,
     name := "moneystack-platform",
     libraryDependencies ++= Seq(
-      "io.github.iltotore" %% "iron-skunk"   % V.iron,
-      "io.github.iltotore" %% "iron-circe"   % V.iron,
-      "org.tpolecat"       %% "skunk-core"   % V.skunk,
-      "org.typelevel"      %% "cats-effect"  % V.ce,
-      "org.http4s"         %% "http4s-dsl"   % V.http4s,
-      "org.http4s"         %% "http4s-circe" % V.http4s,
-      "io.circe"           %% "circe-core"   % V.circe
+      "io.github.iltotore" %% "iron-skunk"   % Versions.iron,
+      "io.github.iltotore" %% "iron-circe"   % Versions.iron,
+      "org.tpolecat"       %% "skunk-core"   % Versions.skunk,
+      "org.typelevel"      %% "cats-effect"  % Versions.ce,
+      "org.http4s"         %% "http4s-dsl"   % Versions.http4s,
+      "org.http4s"         %% "http4s-circe" % Versions.http4s,
+      "io.circe"           %% "circe-core"   % Versions.circe
     )
   )
 
@@ -55,17 +59,17 @@ lazy val testkit = (project in file("modules/testkit"))
     commonSettings,
     name := "moneystack-testkit",
     libraryDependencies ++= Seq(
-      "org.tpolecat"       %% "skunk-core"                % V.skunk,
-      "org.typelevel"      %% "munit-cats-effect"         % V.munitCE,
-      "org.testcontainers" %  "testcontainers-postgresql" % V.testcontainers,
-      "ch.qos.logback"     %  "logback-classic"           % V.logback
+      "org.tpolecat"      %% "skunk-core"                % Versions.skunk,
+      "org.typelevel"     %% "munit-cats-effect"         % Versions.munitCE,
+      "org.testcontainers" % "testcontainers-postgresql" % Versions.testcontainers,
+      "ch.qos.logback"     % "logback-classic"           % Versions.logback
     )
   )
 
 lazy val featureModule = Seq(
   libraryDependencies ++= Seq(
-    "io.circe" %% "circe-generic" % V.circe,
-    "io.circe" %% "circe-parser"  % V.circe
+    "io.circe" %% "circe-generic" % Versions.circe,
+    "io.circe" %% "circe-parser"  % Versions.circe
   ) ++ testDeps,
   Test / fork := true
 )
@@ -92,20 +96,20 @@ lazy val root = (project in file("."))
     commonSettings,
     name := "moneystack",
     libraryDependencies ++= Seq(
-      "io.github.iltotore"    %% "iron"                % V.iron,
-      "io.github.iltotore"    %% "iron-skunk"          % V.iron,
-      "io.github.iltotore"    %% "iron-circe"          % V.iron,
-      "org.tpolecat"          %% "skunk-core"          % V.skunk,
-      "org.http4s"            %% "http4s-ember-server" % V.http4s,
-      "org.http4s"            %% "http4s-ember-client" % V.http4s,
-      "org.http4s"            %% "http4s-circe"        % V.http4s,
-      "org.http4s"            %% "http4s-dsl"          % V.http4s,
-      "io.circe"              %% "circe-core"          % V.circe,
-      "io.circe"              %% "circe-generic"       % V.circe,
-      "io.circe"              %% "circe-parser"        % V.circe,
-      "org.typelevel"         %% "cats-effect"         % V.ce,
-      "org.typelevel"         %% "log4cats-slf4j"      % V.log4cats,
-      "ch.qos.logback"        %  "logback-classic"     % V.logback,
-      ("com.github.t3hnar"    %% "scala-bcrypt"        % V.bcrypt).cross(CrossVersion.for3Use2_13)
+      "io.github.iltotore" %% "iron"                % Versions.iron,
+      "io.github.iltotore" %% "iron-skunk"          % Versions.iron,
+      "io.github.iltotore" %% "iron-circe"          % Versions.iron,
+      "org.tpolecat"       %% "skunk-core"          % Versions.skunk,
+      "org.http4s"         %% "http4s-ember-server" % Versions.http4s,
+      "org.http4s"         %% "http4s-ember-client" % Versions.http4s,
+      "org.http4s"         %% "http4s-circe"        % Versions.http4s,
+      "org.http4s"         %% "http4s-dsl"          % Versions.http4s,
+      "io.circe"           %% "circe-core"          % Versions.circe,
+      "io.circe"           %% "circe-generic"       % Versions.circe,
+      "io.circe"           %% "circe-parser"        % Versions.circe,
+      "org.typelevel"      %% "cats-effect"         % Versions.ce,
+      "org.typelevel"      %% "log4cats-slf4j"      % Versions.log4cats,
+      "ch.qos.logback"      % "logback-classic"     % Versions.logback,
+      ("com.github.t3hnar" %% "scala-bcrypt"        % Versions.bcrypt).cross(CrossVersion.for3Use2_13)
     ) ++ testDeps
   )
