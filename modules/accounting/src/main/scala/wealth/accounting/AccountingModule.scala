@@ -4,6 +4,7 @@ import wealth.domain.*
 import wealth.accounting.db.*
 import wealth.accounting.http.{BankingRoutes, LedgerRoutes, TradeRoutes}
 import wealth.accounting.service.*
+import wealth.platform.Db
 
 import cats.effect.*
 import cats.syntax.all.*

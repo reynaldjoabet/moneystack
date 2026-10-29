@@ -2,7 +2,8 @@ package wealth.accounting.service
 
 import wealth.domain.*
 import wealth.accounting.domain.*
-import wealth.accounting.db.{Db, ExchangeRates, Journals, LedgerAccounts}
+import wealth.accounting.db.{ExchangeRates, Journals, LedgerAccounts}
+import wealth.platform.Db
 
 import cats.effect.*
 import cats.syntax.all.*

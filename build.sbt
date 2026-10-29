@@ -32,33 +32,51 @@ lazy val core = (project in file("modules/core"))
     )
   )
 
-/**
- * General ledger, sales & purchases, inventory, banking and statements.
- * Depends only on `core`; integration tests run Postgres via Testcontainers.
- */
-lazy val accounting = (project in file("modules/accounting"))
+/** Skunk codecs for core types, transactions, and route plumbing shared by the feature modules. */
+lazy val platform = (project in file("modules/platform"))
   .dependsOn(core)
   .settings(
     commonSettings,
-    name := "wealth-accounting",
+    name := "wealth-platform",
     libraryDependencies ++= Seq(
-      "io.github.iltotore"    %% "iron-skunk"              % V.iron,
-      "io.github.iltotore"    %% "iron-circe"              % V.iron,
-      "org.tpolecat"          %% "skunk-core"              % V.skunk,
-      "org.typelevel"         %% "cats-effect"             % V.ce,
-      "org.http4s"            %% "http4s-dsl"              % V.http4s,
-      "org.http4s"            %% "http4s-circe"            % V.http4s,
-      "io.circe"              %% "circe-core"              % V.circe,
-      "io.circe"              %% "circe-generic"           % V.circe,
-      "org.testcontainers"    %  "testcontainers-postgresql" % V.testcontainers % Test,
-      "ch.qos.logback"        %  "logback-classic"         % V.logback        % Test
-    ) ++ testDeps,
-    Test / fork := true
+      "io.github.iltotore" %% "iron-skunk"   % V.iron,
+      "io.github.iltotore" %% "iron-circe"   % V.iron,
+      "org.tpolecat"       %% "skunk-core"   % V.skunk,
+      "org.typelevel"      %% "cats-effect"  % V.ce,
+      "org.http4s"         %% "http4s-dsl"   % V.http4s,
+      "org.http4s"         %% "http4s-circe" % V.http4s,
+      "io.circe"           %% "circe-core"   % V.circe
+    )
   )
+
+/** Test-only: Testcontainers Postgres fixture and assertions shared by the modules' integration suites. */
+lazy val testkit = (project in file("modules/testkit"))
+  .settings(
+    commonSettings,
+    name := "wealth-testkit",
+    libraryDependencies ++= Seq(
+      "org.tpolecat"       %% "skunk-core"                % V.skunk,
+      "org.typelevel"      %% "munit-cats-effect"         % V.munitCE,
+      "org.testcontainers" %  "testcontainers-postgresql" % V.testcontainers,
+      "ch.qos.logback"     %  "logback-classic"           % V.logback
+    )
+  )
+
+lazy val featureModule = Seq(
+  libraryDependencies ++= Seq(
+    "io.circe" %% "circe-generic" % V.circe
+  ) ++ testDeps,
+  Test / fork := true
+)
+
+/** General ledger, sales & purchases, inventory, banking and statements (after bigcapital and Akaunting). */
+lazy val accounting = (project in file("modules/accounting"))
+  .dependsOn(platform, testkit % Test)
+  .settings(commonSettings, featureModule, name := "wealth-accounting")
 
 lazy val root = (project in file("."))
   .dependsOn(core, accounting)
-  .aggregate(core, accounting)
+  .aggregate(core, platform, testkit, accounting)
   .settings(
     commonSettings,
     name := "wealth",

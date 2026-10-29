@@ -2,7 +2,8 @@ package wealth.accounting.service
 
 import wealth.domain.*
 import wealth.accounting.domain.*
-import wealth.accounting.db.{Contacts, Db, Documents, Items, Journals, Settlements, TaxRates}
+import wealth.accounting.db.{Contacts, Documents, Items, Journals, Settlements, TaxRates}
+import wealth.platform.Db
 import wealth.accounting.service.LedgerService.SystemAccounts
 
 import cats.data.EitherT

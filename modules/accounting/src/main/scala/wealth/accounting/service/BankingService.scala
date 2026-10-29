@@ -2,7 +2,8 @@ package wealth.accounting.service
 
 import wealth.domain.*
 import wealth.accounting.domain.*
-import wealth.accounting.db.{Banking, Contacts, Db}
+import wealth.accounting.db.{Banking, Contacts}
+import wealth.platform.Db
 
 import cats.data.EitherT
 import cats.effect.*
