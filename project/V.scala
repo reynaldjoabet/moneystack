@@ -9,4 +9,5 @@ object V {
   val bcrypt    = "4.3.0"
   val munit     = "1.3.6"
   val munitCE   = "2.2.1"
+  val testcontainers = "2.0.5"
 }

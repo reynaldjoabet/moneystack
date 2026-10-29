@@ -82,7 +82,7 @@ object Portfolios {
 
     val insertAlloc: Command[ModelAllocation] =
       sql"""INSERT INTO model_allocations (model_portfolio_id, ticker, exchange, weight_bps)
-            VALUES $allocC
+            VALUES ${allocC.values}
             ON CONFLICT (model_portfolio_id, ticker, exchange) DO UPDATE
               SET weight_bps = EXCLUDED.weight_bps""".command
 
@@ -100,7 +100,7 @@ object Portfolios {
 
     val insertPortfolio: Query[Portfolio, Portfolio] =
       sql"""INSERT INTO portfolios (id, user_id, name, base_currency, backed_by, created_at)
-            VALUES $portfolioC
+            VALUES ${portfolioC.values}
             RETURNING id, user_id, name, base_currency, backed_by, created_at""".query(portfolioC)
 
     val listFor: Query[UserId, Portfolio] =

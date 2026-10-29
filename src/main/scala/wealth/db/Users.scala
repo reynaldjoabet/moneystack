@@ -36,7 +36,7 @@ object Users {
   private object Q {
     val insert: Query[User, User] =
       sql"""INSERT INTO users (id, email, password_hash, display_name, role, locale, telegram_chat_id, created_at)
-            VALUES $userC
+            VALUES ${userC.values}
             RETURNING id, email, password_hash, display_name, role, locale, telegram_chat_id, created_at""".query(userC)
 
     val byId: Query[UserId, User] =

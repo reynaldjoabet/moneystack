@@ -1,5 +1,7 @@
 package wealth.config
 
+import wealth.domain.CurrencyCode
+
 import cats.effect.Sync
 
 final case class DbConfig(
@@ -8,7 +10,10 @@ final case class DbConfig(
 
 final case class HttpConfig(host: String, port: Int)
 
-final case class AppConfig(db: DbConfig, http: HttpConfig)
+/** `baseCurrency` is the reporting currency; foreign-currency entries are valued in it. */
+final case class LedgerConfig(baseCurrency: CurrencyCode)
+
+final case class AppConfig(db: DbConfig, http: HttpConfig, ledger: LedgerConfig)
 
 object AppConfig {
   def load[F[_]: Sync]: F[AppConfig] = Sync[F].delay {
@@ -28,6 +33,10 @@ object AppConfig {
       http = HttpConfig(
         host = env("HTTP_HOST").getOrElse("0.0.0.0"),
         port = int("HTTP_PORT", 8080)
+      ),
+      ledger = LedgerConfig(
+        baseCurrency = CurrencyCode.either(env("LEDGER_BASE_CURRENCY").getOrElse("USD"))
+                         .fold(err => sys.error(s"LEDGER_BASE_CURRENCY: $err"), identity)
       )
     )
   }

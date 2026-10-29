@@ -56,7 +56,7 @@ object Subscriptions {
 
     val upsertPlan: Query[Plan, Plan] =
       sql"""INSERT INTO plans (id, code, name, price_minor, currency, interval, active)
-            VALUES $planC
+            VALUES ${planC.values}
             ON CONFLICT (code) DO UPDATE
               SET name = EXCLUDED.name, price_minor = EXCLUDED.price_minor,
                   currency = EXCLUDED.currency, interval = EXCLUDED.interval, active = EXCLUDED.active
@@ -65,7 +65,7 @@ object Subscriptions {
     val insertSub: Query[Subscription, Subscription] =
       sql"""INSERT INTO subscriptions (id, user_id, plan_id, status,
                                        current_period_start, current_period_end, cancel_at, cloudpayments_ref)
-            VALUES $subC
+            VALUES ${subC.values}
             RETURNING id, user_id, plan_id, status,
                       current_period_start, current_period_end, cancel_at, cloudpayments_ref""".query(subC)
 
@@ -82,7 +82,7 @@ object Subscriptions {
     val insertPayment: Query[Payment, Payment] =
       sql"""INSERT INTO payments (id, user_id, subscription_id, course_id, amount_minor, currency,
                                   status, cloudpayments_ref, created_at)
-            VALUES $paymentC
+            VALUES ${paymentC.values}
             RETURNING id, user_id, subscription_id, course_id, amount_minor, currency,
                       status, cloudpayments_ref, created_at""".query(paymentC)
 

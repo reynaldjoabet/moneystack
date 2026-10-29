@@ -5,8 +5,11 @@ import wealth.db.*
 import wealth.external.*
 import wealth.http.*
 import wealth.service.*
+import wealth.accounting.AccountingModule
+import wealth.domain.Role
 
 import cats.effect.*
+import cats.syntax.all.*
 import com.comcast.ip4s.*
 import org.http4s.ember.server.EmberServerBuilder
 import org.http4s.server.middleware.Logger
@@ -38,17 +41,16 @@ object Main extends IOApp.Simple {
                 }
 
         // ---- repositories ----
-        usersR   = Users.make[IO](pool)
-        portR    = Portfolios.make[IO](pool)
-        holdR    = Holdings.make[IO](pool)
-        recsR    = Recommendations.make[IO](pool)
-        subsR    = Subscriptions.make[IO](pool)
+        usersR    = Users.make[IO](pool)
+        portR     = Portfolios.make[IO](pool)
+        holdR     = Holdings.make[IO](pool)
+        recsR     = Recommendations.make[IO](pool)
+        subsR     = Subscriptions.make[IO](pool)
 
         // ---- external sandboxes ----
         market    <- Resource.eval(SandboxMarketData.make[IO](Map.empty))
         gateway   <- Resource.eval(PaymentGateway.sandbox[IO])
         crm       <- Resource.eval(Crm.sandbox[IO])
-        accounting<- Resource.eval(Accounting.sandbox[IO])
         tax       <- Resource.eval(Tax.sandbox[IO])
         telegram  <- Resource.eval(Telegram.sandbox[IO](msg => logger.info(msg)))
         push      <- Resource.eval(Push.sandbox[IO](msg => logger.info(msg)))
@@ -56,13 +58,17 @@ object Main extends IOApp.Simple {
         support   <- Resource.eval(SupportSink.sandbox[IO])
 
         // ---- services ----
+        books             = AccountingModule.make[IO](pool, cfg.ledger.baseCurrency)
+        _                 <- Resource.eval(books.bootstrap)
+        accounting        = LedgerAccounting.make[IO](usersR, books)
         portfolioSvc      = PortfolioService.make[IO](portR, holdR, market)
         recommendationSvc = RecommendationService.make[IO](recsR, portR, usersR, telegram, push)
         subscriptionSvc   = SubscriptionService.make[IO](usersR, subsR, gateway, crm, accounting)
 
         // ---- HTTP ----
         routes = new Routes[IO](usersR, portR, holdR, recsR, subsR, market,
-                                 portfolioSvc, recommendationSvc, subscriptionSvc).routes
+                                 portfolioSvc, recommendationSvc, subscriptionSvc).routes <+>
+                 books.routes(Principal.withRole[IO](usersR, Role.Accountant))
         app    = Logger.httpApp(logHeaders = true, logBody = false)(routes.orNotFound)
 
         host <- Resource.eval(IO.fromOption(Host.fromString(cfg.http.host))(new IllegalArgumentException("bad host")))

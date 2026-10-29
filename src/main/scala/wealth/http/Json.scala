@@ -67,6 +67,7 @@ object Json {
   given Encoder[PortfolioService.ValuationLine] = deriveEncoder
   given Encoder[PortfolioService.Valuation]     = deriveEncoder
 
+
   // ---- request bodies ----
   final case class SignupBody(email: Email, password: String, displayName: DisplayName, role: Role, locale: Locale)
   given Decoder[SignupBody] = deriveDecoder

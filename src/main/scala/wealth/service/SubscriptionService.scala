@@ -12,9 +12,9 @@ import java.time.temporal.ChronoUnit
 import java.util.UUID
 
 /**
- * Subscription lifecycle. Charges the user via Cloudpayments, records the
- * resulting payment, opens the subscription record, and mirrors the change
- * into Salesforce + FinancialForce.
+ * Subscription lifecycle. Charges the user via Cloudpayments, opens the
+ * subscription record, records the first period's payment, and mirrors the
+ * change into Salesforce + the general ledger.
  *
  * On failure, nothing is persisted. The Cloudpayments idempotency key is
  * derived from `(userId, planId, periodStart)` so retries are safe.
@@ -67,9 +67,23 @@ object SubscriptionService {
                                           cancelAt            = None,
                                           cloudpaymentsRef    = Some(setup.ref)
                                         ))
-                                 // Mirror to CRM + FinancialForce; non-fatal if these fail.
+                                 payment <- subscriptions.insertPayment(Payment(
+                                              id               = PaymentId.assume(UUID.randomUUID()),
+                                              userId           = userId,
+                                              subscriptionId   = Some(sub.id),
+                                              courseId         = None,
+                                              amountMinor      = plan.priceMinor,
+                                              currency         = plan.currency,
+                                              status           = PaymentStatus.Captured,
+                                              cloudpaymentsRef = setup.ref,
+                                              createdAt        = now
+                                            ))
+                                 // Mirror to CRM + the ledger; non-fatal if these fail. Ledger
+                                 // posting is idempotent per payment, so it can be replayed.
                                  _   <- crm.recordSubscriptionChange(userId, sub).attempt.void
                                  _   <- crm.upsertContact(userId, u.email, u.displayName).attempt.void
+                                 _   <- crm.recordPayment(userId, payment).attempt.void
+                                 _   <- accounting.postRevenue(userId, payment).attempt.void
                                } yield Right(sub)
                            }
               } yield result

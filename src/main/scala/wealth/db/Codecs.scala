@@ -44,8 +44,8 @@ object Codecs {
 
   val amountMinor: Codec[AmountMinor]   = int8.imap(AmountMinor.assume)(_.value)
   val priceMinor: Codec[PriceMinor]     = int8.refined[Positive].imap(PriceMinor.assume)(_.value)
-  val quantity: Codec[Quantity]         = numeric.eimap[Quantity](Quantity.positive)(_.value)
-  val unitPrice: Codec[UnitPrice]       = numeric.eimap[UnitPrice](UnitPrice.positive)(_.value)
+  val quantity: Codec[Quantity]         = numeric(38, 18).eimap[Quantity](Quantity.positive)(_.value)
+  val unitPrice: Codec[UnitPrice]       = numeric(38, 18).eimap[UnitPrice](UnitPrice.positive)(_.value)
   val weightBps: Codec[WeightBps]       = int4.refined[GreaterEqual[0] & LessEqual[10_000]].imap(WeightBps.assume)(_.value)
   val bps: Codec[Bps]                   = int4.refined[GreaterEqual[0] & LessEqual[100_000]].imap(Bps.assume)(_.value)
 

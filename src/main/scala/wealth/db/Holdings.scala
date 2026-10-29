@@ -31,7 +31,7 @@ object Holdings {
 
     val upsert: Query[Holding, Holding] =
       sql"""INSERT INTO holdings (id, portfolio_id, ticker, exchange, quantity, avg_cost_unit, updated_at)
-            VALUES $holdingC
+            VALUES ${holdingC.values}
             ON CONFLICT (portfolio_id, ticker, exchange) DO UPDATE
               SET quantity = EXCLUDED.quantity,
                   avg_cost_unit = EXCLUDED.avg_cost_unit,

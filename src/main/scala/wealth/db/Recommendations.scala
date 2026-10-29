@@ -32,7 +32,7 @@ object Recommendations {
     val insert: Query[Recommendation, Recommendation] =
       sql"""INSERT INTO recommendations (id, model_portfolio_id, ticker, exchange, action, rationale,
                                          target_weight_bps, published_at, published_by)
-            VALUES $recC
+            VALUES ${recC.values}
             RETURNING id, model_portfolio_id, ticker, exchange, action, rationale,
                       target_weight_bps, published_at, published_by""".query(recC)
 
