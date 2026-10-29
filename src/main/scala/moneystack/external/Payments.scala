@@ -46,15 +46,25 @@ object PaymentGateway {
     Sync[F].pure(new PaymentGateway[F] {
       private def newRef = Sync[F].delay("cp_" + java.util.UUID.randomUUID().toString.take(20))
 
-      def chargeOnce(userEmail: Email, amount: PriceMinor, currency: CurrencyCode,
-                     description: String, idempotencyKey: String): F[Result] =
+      def chargeOnce(
+          userEmail: Email,
+          amount: PriceMinor,
+          currency: CurrencyCode,
+          description: String,
+          idempotencyKey: String
+      ): F[Result] =
         newRef.map(ref => Result(ref, PaymentStatus.Captured))
 
-      def startRecurring(userEmail: Email, amount: PriceMinor, currency: CurrencyCode,
-                         interval: BillingInterval, idempotencyKey: String): F[RecurringSetup] =
+      def startRecurring(
+          userEmail: Email,
+          amount: PriceMinor,
+          currency: CurrencyCode,
+          interval: BillingInterval,
+          idempotencyKey: String
+      ): F[RecurringSetup] =
         newRef.map(RecurringSetup(_))
 
-      def cancelRecurring(ref: String): F[Unit] = Sync[F].unit
+      def cancelRecurring(ref: String): F[Unit]            = Sync[F].unit
       def refund(ref: String, amount: PriceMinor): F[Unit] = Sync[F].unit
     })
 }

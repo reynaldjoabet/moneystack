@@ -10,10 +10,12 @@ import skunk.implicits.*
 /** Transactions with their splits. Writes that must commit with other changes take a session. */
 trait Transactions[F[_]] {
   def insert(t: Transaction): F[Transaction]
+
   /** Inserts unless the schedule occurrence or import key is already recorded; `None` if it was. */
   def insertIfNewIn(s: Session[F], t: Transaction): F[Option[Transaction]]
   def replace(t: Transaction): F[Option[Transaction]]
   def delete(id: TransactionId, wallets: List[WalletId]): F[Boolean]
+
   /** Transactions touching any of `wallets` (as source or transfer destination). */
   def forWallets(wallets: List[WalletId]): F[List[Transaction]]
 }
@@ -39,9 +41,11 @@ object Transactions {
       }
 
     def replace(t: Transaction): F[Option[Transaction]] =
-      pool.use(s => s.transaction.use { _ =>
-        s.prepare(Q.replace).flatMap(_.option(t)).flatMap(_.traverse(_ => writeSplits(s, t).as(t)))
-      })
+      pool.use(s =>
+        s.transaction.use { _ =>
+          s.prepare(Q.replace).flatMap(_.option(t)).flatMap(_.traverse(_ => writeSplits(s, t).as(t)))
+        }
+      )
 
     def delete(id: TransactionId, wallets: List[WalletId]): F[Boolean] =
       if (wallets.isEmpty) Concurrent[F].pure(false)
@@ -56,8 +60,8 @@ object Transactions {
         for {
           txs    <- s.prepare(Q.forWallets(wallets.size)).flatMap(_.stream((wallets, wallets), 512).compile.toList)
           splits <- if (txs.isEmpty) Concurrent[F].pure(Nil)
-                    else s.prepare(Q.splitsFor(txs.size)).flatMap(_.stream(txs.map(_.id), 512).compile.toList)
-          byTx    = splits.groupMap(_._1)(_._2)
+          else s.prepare(Q.splitsFor(txs.size)).flatMap(_.stream(txs.map(_.id), 512).compile.toList)
+          byTx = splits.groupMap(_._1)(_._2)
         } yield txs.map(t => t.copy(splits = byTx.getOrElse(t.id, Nil)))
       }
   }

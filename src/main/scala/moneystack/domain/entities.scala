@@ -124,24 +124,24 @@ final case class Quote(
     price: UnitPrice,
     currency: CurrencyCode,
     asOf: Instant,
-    source: String                     // "alpha_vantage" | "yahoo" | "bloomberg"
+    source: String // "alpha_vantage" | "yahoo" | "bloomberg"
 )
 
 final case class NewsItem(
     id: NewsId,
     title: Title,
     body: Body,
-    tickers: List[Ticker],             // tagged tickers for filtering
+    tickers: List[Ticker], // tagged tickers for filtering
     publishedAt: Instant,
-    authorId: Option[UserId],          // None if syndicated from a feed
+    authorId: Option[UserId], // None if syndicated from a feed
     source: String
 )
 
 final case class Alert(
     id: AlertId,
     userId: UserId,
-    kind: String,                      // 'price_threshold' | 'pct_move' | 'news_tag' | ...
-    payload: String,                   // JSON-encoded parameters
+    kind: String,    // 'price_threshold' | 'pct_move' | 'news_tag' | ...
+    payload: String, // JSON-encoded parameters
     deliveredAt: Option[Instant]
 )
 
@@ -194,7 +194,7 @@ final case class Course(
     description: Body,
     priceMinor: PriceMinor,
     currency: CurrencyCode,
-    minutes: Int,                       // total runtime
+    minutes: Int, // total runtime
     publishedAt: Instant
 )
 
@@ -224,5 +224,5 @@ final case class PortfolioPerformance(
     marketValueMinor: AmountMinor,
     costBasisMinor: AmountMinor,
     unrealizedPnLMinor: AmountMinor,
-    twrBpsToDate: Bps                   // time-weighted return since inception, in bps
+    twrBpsToDate: Bps // time-weighted return since inception, in bps
 )

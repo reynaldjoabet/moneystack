@@ -78,23 +78,30 @@ object Valuation {
       days.foldLeft[Either[PortfolioError, State]](Right(init)) { (acc, day) =>
         acc.flatMap { case (books, contributed, out) =>
           for {
-            stepped   <- tracked.foldLeft[Either[PortfolioError, Map[InvestmentAccountId, Book]]](Right(books)) { (bs, acct) =>
-                           bs.flatMap { m =>
-                             byDay(acct.id).getOrElse(day, Nil)
-                               .foldLeft[Either[PortfolioError, Book]](Right(m(acct.id)))((b, a) => b.flatMap(Engine.step(_, a, ctx)))
-                               .map(m.updated(acct.id, _))
-                           }
-                         }
-            open       = stepped.values.toList
-            todayFlow  = open.flatMap(b => b.flows.drop(books(b.accountId).flows.size)).filter(scope.counts).map(_.amountBase).sum
-            invested  <- positionsValue(open, ctx, day)
-            cash      <- cashValue(open, ctx, day)
-            balances  <- balancedValue(balanced, snaps, ctx, day)
+            stepped <- tracked.foldLeft[Either[PortfolioError, Map[InvestmentAccountId, Book]]](Right(books)) { (bs, acct) =>
+              bs.flatMap { m =>
+                byDay(acct.id).getOrElse(day, Nil)
+                  .foldLeft[Either[PortfolioError, Book]](Right(m(acct.id)))((b, a) => b.flatMap(Engine.step(_, a, ctx)))
+                  .map(m.updated(acct.id, _))
+              }
+            }
+            open      = stepped.values.toList
+            todayFlow = open.flatMap(b => b.flows.drop(books(b.accountId).flows.size)).filter(scope.counts).map(_.amountBase).sum
+            invested <- positionsValue(open, ctx, day)
+            cash     <- cashValue(open, ctx, day)
+            balances <- balancedValue(balanced, snaps, ctx, day)
             (balValue, balFlow) = balances
-            flow       = todayFlow + balFlow
-            total      = invested._1 + cash + balValue
-            dv         = DailyValue(day, round2(invested._1 + balValue), round2(cash), round2(total), round2(invested._2),
-                                    round2(contributed + flow), round2(flow))
+            flow                = todayFlow + balFlow
+            total               = invested._1 + cash + balValue
+            dv                  = DailyValue(
+              day,
+              round2(invested._1 + balValue),
+              round2(cash),
+              round2(total),
+              round2(invested._2),
+              round2(contributed + flow),
+              round2(flow)
+            )
           } yield (stepped, contributed + flow, if (day.isBefore(from)) out else dv :: out)
         }
       }.map(_._3.reverse)
@@ -102,11 +109,12 @@ object Valuation {
   }
 
   private def positionsValue(books: List[Book], ctx: Engine.Context, day: LocalDate): Either[PortfolioError, (BigDecimal, BigDecimal)] =
-    books.flatMap(_.openPositions).foldLeft[Either[PortfolioError, (BigDecimal, BigDecimal)]](Right((BigDecimal(0), BigDecimal(0)))) { (acc, pos) =>
-      for {
-        sum <- acc
-        mv  <- ctx.fx.convert(pos.quantity * priceOf(pos, ctx, day)._1, pos.currency, ctx.base, day)
-      } yield (sum._1 + mv, sum._2 + pos.costBase)
+    books.flatMap(_.openPositions).foldLeft[Either[PortfolioError, (BigDecimal, BigDecimal)]](Right((BigDecimal(0), BigDecimal(0)))) {
+      (acc, pos) =>
+        for {
+          sum <- acc
+          mv  <- ctx.fx.convert(pos.quantity * priceOf(pos, ctx, day)._1, pos.currency, ctx.base, day)
+        } yield (sum._1 + mv, sum._2 + pos.costBase)
     }
 
   private def cashValue(books: List[Book], ctx: Engine.Context, day: LocalDate): Either[PortfolioError, BigDecimal] =
@@ -124,7 +132,7 @@ object Valuation {
     accounts.foldLeft[Either[PortfolioError, (BigDecimal, BigDecimal)]](Right((BigDecimal(0), BigDecimal(0)))) { (acc, a) =>
       val series = snaps(a.id)
       val latest = series.rangeTo(day).lastOption.map(_._2)
-      val flow = series.get(day).map { s =>
+      val flow   = series.get(day).map { s =>
         s.invested - series.rangeUntil(day).lastOption.map(_._2.invested).getOrElse(BigDecimal(0))
       }.getOrElse(BigDecimal(0))
       for {
@@ -141,18 +149,38 @@ object Valuation {
       val asset  = ctx.assets(assetId)
       val merged = Position(assetId, asset.currency, held.flatMap(_._2.lots).toVector, held.flatMap(_._2.lastTradePrice).lastOption)
       val (price, priced) = priceOf(merged, ctx, asOf)
-      val mv = merged.quantity * price
+      val mv              = merged.quantity * price
       for {
         list   <- acc
         mvBase <- ctx.fx.convert(mv, asset.currency, ctx.base, asOf)
-      } yield HoldingView(assetId, asset.symbol, asset.name, asset.kind, asset.currency, merged.quantity,
-                          merged.averageCost.getOrElse(BigDecimal(0)), price, priced, round2(mv), round2(mvBase),
-                          round2(merged.costBase), round2(mvBase - merged.costBase),
-                          Option.when(merged.costBase != 0)(((mvBase - merged.costBase) / merged.costBase * 100).setScale(4, BigDecimal.RoundingMode.HALF_EVEN)),
-                          BigDecimal(0), held.map(_._1).distinct) :: list
+      } yield HoldingView(
+        assetId,
+        asset.symbol,
+        asset.name,
+        asset.kind,
+        asset.currency,
+        merged.quantity,
+        merged.averageCost.getOrElse(BigDecimal(0)),
+        price,
+        priced,
+        round2(mv),
+        round2(mvBase),
+        round2(merged.costBase),
+        round2(mvBase - merged.costBase),
+        Option.when(merged.costBase != 0)(((mvBase - merged.costBase) / merged.costBase * 100).setScale(
+          4,
+          BigDecimal.RoundingMode.HALF_EVEN
+        )),
+        BigDecimal(0),
+        held.map(_._1).distinct
+      ) :: list
     }.map { hs =>
       val total = hs.map(_.marketValueBase).sum
-      hs.map(h => h.copy(weightPct = if (total == 0) BigDecimal(0) else (h.marketValueBase / total * 100).setScale(4, BigDecimal.RoundingMode.HALF_EVEN)))
+      hs.map(h =>
+        h.copy(weightPct =
+          if (total == 0) BigDecimal(0) else (h.marketValueBase / total * 100).setScale(4, BigDecimal.RoundingMode.HALF_EVEN)
+        )
+      )
         .sortBy(-_.marketValueBase)
     }
   }

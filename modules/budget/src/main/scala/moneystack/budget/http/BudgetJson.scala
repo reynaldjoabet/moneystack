@@ -26,41 +26,41 @@ object BudgetJson {
   given Codec[ObjectiveKind]  = enumCodec(ObjectiveKind.render, ObjectiveKind.parse)
   given Codec[Bucket]         = enumCodec(Bucket.render, Bucket.parse)
 
-  given Encoder[Wallet]                   = deriveEncoder
-  given Encoder[MoneyService.WalletView]  = deriveEncoder
-  given Encoder[Category]                 = deriveEncoder
-  given Encoder[Payee]                    = deriveEncoder
-  given Encoder[Tag]                      = deriveEncoder
-  given Codec[Split]                      = deriveCodec
-  given Encoder[Transaction]              = deriveEncoder
-  given Encoder[Rule]                     = deriveEncoder
-  given Encoder[MoneyService.RuleRun]     = deriveEncoder
+  given Encoder[Wallet]                    = deriveEncoder
+  given Encoder[MoneyService.WalletView]   = deriveEncoder
+  given Encoder[Category]                  = deriveEncoder
+  given Encoder[Payee]                     = deriveEncoder
+  given Encoder[Tag]                       = deriveEncoder
+  given Codec[Split]                       = deriveCodec
+  given Encoder[Transaction]               = deriveEncoder
+  given Encoder[Rule]                      = deriveEncoder
+  given Encoder[MoneyService.RuleRun]      = deriveEncoder
   given Encoder[MoneyService.ImportReport] = deriveEncoder
-  given Codec[FxQuote]                    = deriveCodec
+  given Codec[FxQuote]                     = deriveCodec
 
-  given Codec[CategoryLimit]              = deriveCodec
-  given Encoder[Budget]                   = deriveEncoder
-  given Encoder[Period]                   = deriveEncoder
-  given Encoder[LimitStatus]              = deriveEncoder
-  given Encoder[BudgetStatus]             = deriveEncoder
-  given Encoder[PlanService.BudgetView]   = deriveEncoder
-  given Encoder[PlanService.PeriodSpend]  = deriveEncoder
-  given Encoder[Schedule]                 = deriveEncoder
-  given Encoder[PlanService.ScheduleView] = deriveEncoder
-  given Encoder[PlanService.Upcoming]     = deriveEncoder
+  given Codec[CategoryLimit]                  = deriveCodec
+  given Encoder[Budget]                       = deriveEncoder
+  given Encoder[Period]                       = deriveEncoder
+  given Encoder[LimitStatus]                  = deriveEncoder
+  given Encoder[BudgetStatus]                 = deriveEncoder
+  given Encoder[PlanService.BudgetView]       = deriveEncoder
+  given Encoder[PlanService.PeriodSpend]      = deriveEncoder
+  given Encoder[Schedule]                     = deriveEncoder
+  given Encoder[PlanService.ScheduleView]     = deriveEncoder
+  given Encoder[PlanService.Upcoming]         = deriveEncoder
   given Encoder[PlanService.SubscriptionCost] = deriveEncoder
-  given Encoder[Objective]                = deriveEncoder
-  given Encoder[ObjectiveProgress]        = deriveEncoder
+  given Encoder[Objective]                    = deriveEncoder
+  given Encoder[ObjectiveProgress]            = deriveEncoder
 
-  given Encoder[Summary]                  = deriveEncoder
-  given Encoder[CategoryTotal]            = deriveEncoder
-  given Encoder[TrendPoint]               = deriveEncoder
-  given Encoder[CategoryChange]           = deriveEncoder
-  given Encoder[FlowLink]                 = deriveEncoder
-  given Encoder[WalletBalance]            = deriveEncoder
-  given Encoder[InsightService.Balances]  = deriveEncoder
-  given Encoder[Streak]                   = deriveEncoder
-  given Encoder[Recap] = Encoder.instance { r =>
+  given Encoder[Summary]                 = deriveEncoder
+  given Encoder[CategoryTotal]           = deriveEncoder
+  given Encoder[TrendPoint]              = deriveEncoder
+  given Encoder[CategoryChange]          = deriveEncoder
+  given Encoder[FlowLink]                = deriveEncoder
+  given Encoder[WalletBalance]           = deriveEncoder
+  given Encoder[InsightService.Balances] = deriveEncoder
+  given Encoder[Streak]                  = deriveEncoder
+  given Encoder[Recap]                   = Encoder.instance { r =>
     deriveEncoder[Recap].apply(r).deepMerge(Json.obj("month" -> r.month.toString.asJson))
   }
   given Encoder[(LocalDate, Long)] = Encoder.instance { case (d, v) => Json.obj("date" -> d.asJson, "balanceMinor" -> v.asJson) }

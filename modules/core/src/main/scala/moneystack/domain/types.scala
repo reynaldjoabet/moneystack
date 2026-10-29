@@ -7,49 +7,49 @@ import java.util.UUID
 
 // ---------- Identifiers ----------
 
-type UserId            = UserId.T
-object UserId            extends RefinedType[UUID, Pure] {}
+type UserId = UserId.T
+object UserId extends RefinedType[UUID, Pure] {}
 
-type PortfolioId       = PortfolioId.T
-object PortfolioId       extends RefinedType[UUID, Pure] {}
+type PortfolioId = PortfolioId.T
+object PortfolioId extends RefinedType[UUID, Pure] {}
 
-type ModelPortfolioId  = ModelPortfolioId.T
-object ModelPortfolioId  extends RefinedType[UUID, Pure] {}
+type ModelPortfolioId = ModelPortfolioId.T
+object ModelPortfolioId extends RefinedType[UUID, Pure] {}
 
-type HoldingId         = HoldingId.T
-object HoldingId         extends RefinedType[UUID, Pure] {}
+type HoldingId = HoldingId.T
+object HoldingId extends RefinedType[UUID, Pure] {}
 
-type RecommendationId  = RecommendationId.T
-object RecommendationId  extends RefinedType[UUID, Pure] {}
+type RecommendationId = RecommendationId.T
+object RecommendationId extends RefinedType[UUID, Pure] {}
 
-type SubscriptionId    = SubscriptionId.T
-object SubscriptionId    extends RefinedType[UUID, Pure] {}
+type SubscriptionId = SubscriptionId.T
+object SubscriptionId extends RefinedType[UUID, Pure] {}
 
-type PaymentId         = PaymentId.T
-object PaymentId         extends RefinedType[UUID, Pure] {}
+type PaymentId = PaymentId.T
+object PaymentId extends RefinedType[UUID, Pure] {}
 
-type PlanId            = PlanId.T
-object PlanId            extends RefinedType[UUID, Pure] {}
+type PlanId = PlanId.T
+object PlanId extends RefinedType[UUID, Pure] {}
 
-type CourseId          = CourseId.T
-object CourseId          extends RefinedType[UUID, Pure] {}
+type CourseId = CourseId.T
+object CourseId extends RefinedType[UUID, Pure] {}
 
-type WebinarId         = WebinarId.T
-object WebinarId         extends RefinedType[UUID, Pure] {}
+type WebinarId = WebinarId.T
+object WebinarId extends RefinedType[UUID, Pure] {}
 
-type EnrollmentId      = EnrollmentId.T
-object EnrollmentId      extends RefinedType[UUID, Pure] {}
+type EnrollmentId = EnrollmentId.T
+object EnrollmentId extends RefinedType[UUID, Pure] {}
 
-type NewsId            = NewsId.T
-object NewsId            extends RefinedType[UUID, Pure] {}
+type NewsId = NewsId.T
+object NewsId extends RefinedType[UUID, Pure] {}
 
-type AlertId           = AlertId.T
-object AlertId           extends RefinedType[UUID, Pure] {}
+type AlertId = AlertId.T
+object AlertId extends RefinedType[UUID, Pure] {}
 
 // ---------- People & contact ----------
 
 type EmailConstraint = Not[Blank] & MaxLength[254] & Match["""^[^@\s]+@[^@\s]+\.[^@\s]+$"""]
-type Email = Email.T
+type Email           = Email.T
 object Email extends RefinedType[String, EmailConstraint] {}
 
 type DisplayName = DisplayName.T

@@ -57,7 +57,7 @@ final class Routes[F[_]: Async](
       case Some(uid) =>
         users.find(uid).flatMap {
           case Some(u) if u.role == role => Async[F].pure(Right(u))
-          case _                          => Forbidden().map(Left(_))
+          case _                         => Forbidden().map(Left(_))
         }
     }
 
@@ -73,16 +73,16 @@ final class Routes[F[_]: Async](
         for {
           hash <- Async[F].delay(b.password.bcryptBounded(12))
           now  <- Async[F].delay(Instant.now())
-          u     = User(
-                    id             = UserId.assume(UUID.randomUUID()),
-                    email          = b.email,
-                    passwordHash   = PasswordHash.assume(hash),
-                    displayName    = b.displayName,
-                    role           = b.role,
-                    locale         = b.locale,
-                    telegramChatId = None,
-                    createdAt      = now
-                  )
+          u = User(
+            id = UserId.assume(UUID.randomUUID()),
+            email = b.email,
+            passwordHash = PasswordHash.assume(hash),
+            displayName = b.displayName,
+            role = b.role,
+            locale = b.locale,
+            telegramChatId = None,
+            createdAt = now
+          )
           saved <- users.create(u)
           resp  <- Created(Json.userEncoder(saved))
         } yield resp
@@ -92,7 +92,7 @@ final class Routes[F[_]: Async](
       req.as[Json.LoginBody].flatMap { b =>
         users.findByEmail(b.email).flatMap {
           case Some(u) if b.password.isBcryptedBounded(u.passwordHash.value) => Ok(Json.userEncoder(u))
-          case _                                                              => Forbidden(Map("error" -> "invalid").asJson)
+          case _                                                             => Forbidden(Map("error" -> "invalid").asJson)
         }
       }
 
@@ -105,9 +105,9 @@ final class Routes[F[_]: Async](
           req.as[Json.CreatePortfolioBody].flatMap { b =>
             for {
               now <- Async[F].delay(Instant.now())
-              p    = Portfolio(PortfolioId.assume(UUID.randomUUID()), u.id, b.name, b.baseCurrency, b.backedBy, now)
-              s   <- portfolios.createPortfolio(p)
-              r   <- Created(s)
+              p = Portfolio(PortfolioId.assume(UUID.randomUUID()), u.id, b.name, b.baseCurrency, b.backedBy, now)
+              s <- portfolios.createPortfolio(p)
+              r <- Created(s)
             } yield r
           }
       }
@@ -125,9 +125,9 @@ final class Routes[F[_]: Async](
           req.as[Json.UpsertHoldingBody].flatMap { b =>
             for {
               now <- Async[F].delay(Instant.now())
-              h    = Holding(HoldingId.assume(UUID.randomUUID()), pid, b.ticker, b.exchange, b.quantity, b.avgCostUnit, now)
-              s   <- holdings.upsert(h)
-              r   <- Created(s)
+              h = Holding(HoldingId.assume(UUID.randomUUID()), pid, b.ticker, b.exchange, b.quantity, b.avgCostUnit, now)
+              s <- holdings.upsert(h)
+              r <- Created(s)
             } yield r
           }
       }
@@ -178,13 +178,20 @@ final class Routes[F[_]: Async](
           req.as[Json.CreateModelBody].flatMap { b =>
             for {
               now <- Async[F].delay(Instant.now())
-              mp   = ModelPortfolio(ModelPortfolioId.assume(UUID.randomUUID()),
-                                    b.name, b.strategy, u.id, now, now, b.description)
+              mp = ModelPortfolio(
+                ModelPortfolioId.assume(UUID.randomUUID()),
+                b.name,
+                b.strategy,
+                u.id,
+                now,
+                now,
+                b.description
+              )
               res <- portfolioSvc.saveModel(mp, b.allocations)
               r   <- res match {
-                       case Right(saved) => Created(saved)
-                       case Left(err)    => BadRequest(Map("error" -> err.toString).asJson)
-                     }
+                case Right(saved) => Created(saved)
+                case Left(err)    => BadRequest(Map("error" -> err.toString).asJson)
+              }
             } yield r
           }
       }
@@ -200,8 +207,15 @@ final class Routes[F[_]: Async](
         case Left(r)  => Async[F].pure(r)
         case Right(u) =>
           req.as[Json.PublishRecBody].flatMap(b =>
-            recommendationSvc.publish(u.id, b.modelId, b.ticker, b.exchange,
-                                       b.action, b.rationale, b.targetWeightBps).flatMap(Created(_))
+            recommendationSvc.publish(
+              u.id,
+              b.modelId,
+              b.ticker,
+              b.exchange,
+              b.action,
+              b.rationale,
+              b.targetWeightBps
+            ).flatMap(Created(_))
           )
       }
 
@@ -212,8 +226,8 @@ final class Routes[F[_]: Async](
 
     case GET -> Root / "quote" / tickerSeg / exchangeSeg =>
       (Ticker.either(tickerSeg), Exchange.either(exchangeSeg)).tupled match {
-        case Left(err)        => BadRequest(Map("error" -> err).asJson)
-        case Right((t, e))    => market.quote(t, e).flatMap(_.fold(NotFound())(Ok(_)))
+        case Left(err)     => BadRequest(Map("error" -> err).asJson)
+        case Right((t, e)) => market.quote(t, e).flatMap(_.fold(NotFound())(Ok(_)))
       }
 
     // ---- admin: plan management ----

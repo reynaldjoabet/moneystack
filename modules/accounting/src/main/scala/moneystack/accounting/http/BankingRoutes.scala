@@ -29,7 +29,9 @@ final class BankingRoutes[F[_]: Async](auth: Request[F] => F[Option[UserId]], ba
 
     case req @ POST -> Root / "accountant" / "banking" / "rules" / BankRuleIdVar(id) / "active" =>
       accountant(req)(_ =>
-        decoded[AccountingJson.ActiveBody](req)(b => banking.setRuleActive(id, b.active).flatMap(found => if (found) NoContent() else NotFound()))
+        decoded[AccountingJson.ActiveBody](req)(b =>
+          banking.setRuleActive(id, b.active).flatMap(found => if (found) NoContent() else NotFound())
+        )
       )
 
     // ---- feed ----

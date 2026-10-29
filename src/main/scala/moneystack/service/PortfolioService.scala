@@ -24,7 +24,7 @@ object PortfolioService {
 
   sealed trait Error
   object Error {
-    final case class AllocationsNotFullyWeighted(totalBps: Int) extends Error
+    final case class AllocationsNotFullyWeighted(totalBps: Int)              extends Error
     final case class DuplicateInstrument(ticker: Ticker, exchange: Exchange) extends Error
   }
 
@@ -56,32 +56,32 @@ object PortfolioService {
 
     def value(p: Portfolio): F[Valuation] =
       for {
-        hs    <- holdings.listFor(p.id)
-        qts   <- marketData.quotes(hs.map(h => (h.ticker, h.exchange)))
-        index  = qts.map(q => (q.ticker, q.exchange) -> q).toMap
-        lines  = hs.map { h =>
-                   val quote = index.get((h.ticker, h.exchange))
-                   val mvBd  = quote.fold(BigDecimal(0))(_.price.value * h.quantity.value)
-                   val cbBd  = h.avgCostUnit.value * h.quantity.value
-                   ValuationLine(
-                     ticker             = h.ticker,
-                     exchange           = h.exchange,
-                     quantity           = h.quantity,
-                     avgCostUnit        = h.avgCostUnit,
-                     marketPrice        = quote.map(_.price),
-                     marketValueMinor   = AmountMinor.assume((mvBd * 100).toLong),
-                     costBasisMinor     = AmountMinor.assume((cbBd * 100).toLong),
-                     unrealizedPnLMinor = AmountMinor.assume(((mvBd - cbBd) * 100).toLong)
-                   )
-                 }
+        hs  <- holdings.listFor(p.id)
+        qts <- marketData.quotes(hs.map(h => (h.ticker, h.exchange)))
+        index = qts.map(q => (q.ticker, q.exchange) -> q).toMap
+        lines = hs.map { h =>
+          val quote = index.get((h.ticker, h.exchange))
+          val mvBd  = quote.fold(BigDecimal(0))(_.price.value * h.quantity.value)
+          val cbBd  = h.avgCostUnit.value * h.quantity.value
+          ValuationLine(
+            ticker = h.ticker,
+            exchange = h.exchange,
+            quantity = h.quantity,
+            avgCostUnit = h.avgCostUnit,
+            marketPrice = quote.map(_.price),
+            marketValueMinor = AmountMinor.assume((mvBd * 100).toLong),
+            costBasisMinor = AmountMinor.assume((cbBd * 100).toLong),
+            unrealizedPnLMinor = AmountMinor.assume(((mvBd - cbBd) * 100).toLong)
+          )
+        }
         now <- Async[F].delay(Instant.now())
       } yield Valuation(
-        portfolioId           = p.id,
-        asOf                  = now,
-        lines                 = lines,
+        portfolioId = p.id,
+        asOf = now,
+        lines = lines,
         totalMarketValueMinor = AmountMinor.assume(lines.map(_.marketValueMinor.value).sum),
-        totalCostBasisMinor   = AmountMinor.assume(lines.map(_.costBasisMinor.value).sum),
-        unrealizedPnLMinor    = AmountMinor.assume(lines.map(_.unrealizedPnLMinor.value).sum)
+        totalCostBasisMinor = AmountMinor.assume(lines.map(_.costBasisMinor.value).sum),
+        unrealizedPnLMinor = AmountMinor.assume(lines.map(_.unrealizedPnLMinor.value).sum)
       )
 
     def performance(p: Portfolio, asOf: LocalDate): F[PortfolioPerformance] =
@@ -89,17 +89,17 @@ object PortfolioService {
         // Simple TWR proxy: realized + unrealized over cost basis. A production
         // implementation needs cashflow-aware daily NAV and a Modified Dietz
         // / true TWR calculation against a benchmark.
-        val cost  = v.totalCostBasisMinor.value.toDouble
-        val pnl   = v.unrealizedPnLMinor.value.toDouble
-        val twr   = if (cost == 0) 0 else math.round(pnl / cost * 10_000).toInt
+        val cost      = v.totalCostBasisMinor.value.toDouble
+        val pnl       = v.unrealizedPnLMinor.value.toDouble
+        val twr       = if (cost == 0) 0 else math.round(pnl / cost * 10_000).toInt
         val twrCapped = twr.max(0).min(100_000)
         PortfolioPerformance(
-          portfolioId        = p.id,
-          asOf               = asOf,
-          marketValueMinor   = v.totalMarketValueMinor,
-          costBasisMinor     = v.totalCostBasisMinor,
+          portfolioId = p.id,
+          asOf = asOf,
+          marketValueMinor = v.totalMarketValueMinor,
+          costBasisMinor = v.totalCostBasisMinor,
           unrealizedPnLMinor = v.unrealizedPnLMinor,
-          twrBpsToDate       = Bps.assume(twrCapped)
+          twrBpsToDate = Bps.assume(twrCapped)
         )
       }
 

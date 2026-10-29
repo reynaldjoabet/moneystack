@@ -16,8 +16,10 @@ import java.util.UUID
  * checks at commit that every entry balances in base currency.
  */
 trait Journals[F[_]] {
+
   /** Posts atomically, honouring the period lock and `(source, sourceId)` idempotency. */
   def post(e: JournalEntry): F[Journals.Outcome]
+
   /** As [[post]], inside the caller's transaction. */
   def postIn(s: Session[F], e: JournalEntry): F[Journals.Outcome]
   def find(id: JournalEntryId): F[Option[JournalEntry]]
@@ -28,6 +30,7 @@ trait Journals[F[_]] {
   def totalsThrough(to: LocalDate): F[List[AccountTotals]]
   def totalsBetween(from: LocalDate, to: LocalDate): F[List[AccountTotals]]
   def rows(from: LocalDate, to: LocalDate): F[List[LedgerRow]]
+
   /** Net income-account credits per app user (via their contacts), in base currency. */
   def revenueByUser(from: LocalDate, to: LocalDate): F[List[(UserId, Long)]]
 
@@ -40,14 +43,16 @@ object Journals {
 
   sealed trait Outcome
   object Outcome {
-    final case class Posted(entry: JournalEntry)          extends Outcome
-    final case class Locked(lock: LedgerLock)             extends Outcome
+    final case class Posted(entry: JournalEntry)         extends Outcome
+    final case class Locked(lock: LedgerLock)            extends Outcome
     final case class Duplicate(existing: JournalEntryId) extends Outcome
   }
 
-  import Codecs.{accountTotals as totalsC, journalEntryId as entryIdC, journalHeader as headerC,
-                 journalSource as sourceC, ledgerLock as lockC, ledgerLockRow as lockRowD,
-                 ledgerRow as rowC, postedLine as lineC, userId as userIdC}
+  import Codecs.{
+    accountTotals as totalsC, journalEntryId as entryIdC, journalHeader as headerC,
+    journalSource as sourceC, ledgerLock as lockC, ledgerLockRow as lockRowD,
+    ledgerRow as rowC, postedLine as lineC, userId as userIdC
+  }
   import skunk.codec.all.{date, int4, int8, uuid}
 
   def make[F[_]: Concurrent](pool: Resource[F, Session[F]]): Journals[F] =
@@ -60,7 +65,7 @@ object Journals {
         // FOR SHARE on the lock row serialises postings against lock changes.
         s.prepare(Q.lockForShare).flatMap(_.unique(skunk.Void)).flatMap {
           case Some(l) if l.locks(e.header.date) => Concurrent[F].pure(Outcome.Locked(l))
-          case _ =>
+          case _                                 =>
             s.prepare(Q.insertHeader).flatMap(_.option(e.header)).flatMap {
               case Some(_) =>
                 s.prepare(Q.insertLine)
@@ -69,7 +74,9 @@ object Journals {
               case None =>
                 e.header.sourceId match {
                   case Some(sid) => s.prepare(Q.bySource).flatMap(_.unique((e.header.source, sid))).map(Outcome.Duplicate(_))
-                  case None      => Concurrent[F].raiseError(new IllegalStateException(s"journal entry ${e.header.id.value} conflicted without a source id"))
+                  case None      => Concurrent[F].raiseError(new IllegalStateException(
+                      s"journal entry ${e.header.id.value} conflicted without a source id"
+                    ))
                 }
             }
         }
@@ -91,7 +98,7 @@ object Journals {
           for {
             headers <- s.prepare(Q.headersBetween).flatMap(_.stream((from, to, limit), 64).compile.toList)
             lines   <- s.prepare(Q.linesBetween).flatMap(_.stream((from, to, limit), 256).compile.toList)
-            byEntry  = lines.groupMap(_._1)(_._2)
+            byEntry = lines.groupMap(_._1)(_._2)
           } yield headers.map(h => JournalEntry(h, byEntry.getOrElse(h.id, Nil)))
         }
 

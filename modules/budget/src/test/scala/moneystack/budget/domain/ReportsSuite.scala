@@ -9,30 +9,30 @@ import java.util.UUID
 
 class ReportsSuite extends munit.FunSuite {
 
-  private val usd = CurrencyCode.USD
-  private val eur = CurrencyCode.EUR
+  private val usd      = CurrencyCode.USD
+  private val eur      = CurrencyCode.EUR
   private val checking = wallet(opening = 100_000)
   private val euros    = wallet(eur)
   private val card     = wallet(kind = WalletKind.CreditCard)
 
-  private val food     = category("Food")
+  private val food      = category("Food")
   private val groceries = category("Groceries", parent = Some(food))
-  private val dining   = category("Dining", parent = Some(food))
-  private val rent     = category("Rent")
-  private val salary   = category("Salary", CategoryKind.Income)
-  private val cats     = List(food, groceries, dining, rent, salary)
+  private val dining    = category("Dining", parent = Some(food))
+  private val rent      = category("Rent")
+  private val salary    = category("Salary", CategoryKind.Income)
+  private val cats      = List(food, groceries, dining, rent, salary)
 
-  private val fx = FxTable(List(FxQuote(eur, usd, d(1, 1), BigDecimal("1.10"))))
+  private val fx      = FxTable(List(FxQuote(eur, usd, d(1, 1), BigDecimal("1.10"))))
   private val wallets = List(checking, euros, card).map(w => w.id -> w).toMap
 
-  private val shop   = tx(checking, TxKind.Expense, 10_000, d(3, 3), Some(groceries))
-  private val txs = List(
+  private val shop = tx(checking, TxKind.Expense, 10_000, d(3, 3), Some(groceries))
+  private val txs  = List(
     tx(checking, TxKind.Income, 300_000, d(3, 1), Some(salary)),
     shop,
     tx(checking, TxKind.Expense, 120_000, d(3, 5), Some(rent)),
-    tx(euros, TxKind.Expense, 5_000, d(3, 6), Some(dining)),                                         // 55.00 USD
+    tx(euros, TxKind.Expense, 5_000, d(3, 6), Some(dining)), // 55.00 USD
     tx(checking, TxKind.Expense, 8_000, d(3, 7), splits = List(Split(groceries.id, 6_000, None), Split(dining.id, 2_000, None))),
-    tx(checking, TxKind.Income, 2_500, d(3, 8), refundOf = Some(shop)),                              // refund lowers groceries
+    tx(checking, TxKind.Income, 2_500, d(3, 8), refundOf = Some(shop)), // refund lowers groceries
     tx(checking, TxKind.Transfer, 50_000, d(3, 9), to = Some(card)),
     tx(checking, TxKind.Expense, 9_000, d(2, 10), Some(groceries))
   )
@@ -43,7 +43,10 @@ class ReportsSuite extends munit.FunSuite {
   test("entries: splits, refunds as negative spending, foreign wallets converted, transfers left out") {
     assertEquals(es.filter(_.kind == CategoryKind.Expense).map(_.amountMinor).sum, 10_000L + 120_000 + 5_500 + 8_000 - 2_500 + 9_000)
     assertEquals(es.count(_.txId == txs(4).id), 2)
-    assertEquals(es.find(_.txId == txs(5).id).map(e => (e.kind, e.categoryId, e.amountMinor)), Some((CategoryKind.Expense, Some(groceries.id), -2_500L)))
+    assertEquals(
+      es.find(_.txId == txs(5).id).map(e => (e.kind, e.categoryId, e.amountMinor)),
+      Some((CategoryKind.Expense, Some(groceries.id), -2_500L))
+    )
   }
 
   test("summary and savings rate") {
@@ -84,11 +87,14 @@ class ReportsSuite extends munit.FunSuite {
 
   test("budget status with filters, limits and rollover") {
     val b = budget(Recurrence.Monthly, d(1, 1), amount = 30_000).copy(
-      categoryIds = List(food.id), rollover = true, categoryLimits = List(CategoryLimit(food.id, 25_000)))
+      categoryIds = List(food.id),
+      rollover = true,
+      categoryLimits = List(CategoryLimit(food.id, 25_000))
+    )
     val st = Reports.status(b, es, cats, d(3, 16)).get
     assertEquals(st.period, march)
-    assertEquals(st.spentMinor, 21_000L)                      // food incl. subcategories, net of the refund
-    assertEquals(st.rolloverMinor, 21_000L)                   // February: 30,000 - 9,000
+    assertEquals(st.spentMinor, 21_000L)    // food incl. subcategories, net of the refund
+    assertEquals(st.rolloverMinor, 21_000L) // February: 30,000 - 9,000
     assertEquals(st.availableMinor, 51_000L)
     assertEquals(st.remainingMinor, 30_000L)
     assertEquals(st.daysLeft, 16L)
@@ -99,8 +105,10 @@ class ReportsSuite extends munit.FunSuite {
   }
 
   test("objectives: goals add contributions, loans track what is outstanding") {
-    def obj(kind: ObjectiveKind) = Objective(ObjectiveId.assume(UUID.randomUUID()), owner, kind, Title.applyUnsafe("o"), 100_000L, usd, None, None, false, Instant.EPOCH)
-    val goal = Reports.objective(obj(ObjectiveKind.Goal), List(TxKind.Expense -> 30_000L, TxKind.Transfer -> 20_000L, TxKind.Income -> 5_000L))
+    def obj(kind: ObjectiveKind) =
+      Objective(ObjectiveId.assume(UUID.randomUUID()), owner, kind, Title.applyUnsafe("o"), 100_000L, usd, None, None, false, Instant.EPOCH)
+    val goal =
+      Reports.objective(obj(ObjectiveKind.Goal), List(TxKind.Expense -> 30_000L, TxKind.Transfer -> 20_000L, TxKind.Income -> 5_000L))
     assertEquals((goal.amountMinor, goal.remainingMinor, goal.pct), (45_000L, 55_000L, BigDecimal("45.00")))
     val lent = Reports.objective(obj(ObjectiveKind.Lent), List(TxKind.Expense -> 40_000L, TxKind.Income -> 10_000L))
     assertEquals((lent.principalMinor, lent.repaidMinor, lent.amountMinor, lent.pct), (40_000L, 10_000L, 30_000L, BigDecimal("25.00")))

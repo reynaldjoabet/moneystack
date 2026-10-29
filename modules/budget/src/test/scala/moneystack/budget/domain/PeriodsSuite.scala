@@ -8,7 +8,7 @@ class PeriodsSuite extends munit.FunSuite {
     val b = budget(Recurrence.Monthly, d(1, 31))
     assertEquals(Periods.periodOf(b, d(2, 15)), Some(Period(d(1, 31), d(2, 27))))
     assertEquals(Periods.periodOf(b, d(2, 28)), Some(Period(d(2, 28), d(3, 30))))
-    assertEquals(Periods.periodOf(b, d(3, 31)), Some(Period(d(3, 31), d(4, 29))))   // back on the 31st
+    assertEquals(Periods.periodOf(b, d(3, 31)), Some(Period(d(3, 31), d(4, 29)))) // back on the 31st
     assertEquals(Periods.periodOf(b, d(1, 30)), None)
   }
 

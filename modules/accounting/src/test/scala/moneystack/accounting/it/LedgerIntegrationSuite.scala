@@ -5,14 +5,13 @@ import moneystack.accounting.domain.*
 import moneystack.accounting.service.LedgerService
 import moneystack.accounting.service.LedgerService.SystemAccounts
 
-
 import java.time.{Instant, LocalDate}
 import java.util.UUID
 
 class LedgerIntegrationSuite extends PostgresSuite {
 
-  private def d(m: Int, day: Int) = LocalDate.of(2026, m, day)
-  private def amt(l: Long)        = PriceMinor.assume(l)
+  private def d(m: Int, day: Int)                         = LocalDate.of(2026, m, day)
+  private def amt(l: Long)                                = PriceMinor.assume(l)
   private def dr(a: LedgerService.SystemAccount, l: Long) = JournalLine(a.id, Side.Debit, amt(l), None)
   private def cr(a: LedgerService.SystemAccount, l: Long) = JournalLine(a.id, Side.Credit, amt(l), None)
 
@@ -33,23 +32,31 @@ class LedgerIntegrationSuite extends PostgresSuite {
     for {
       e   <- ok(books.ledger.post(draft(d(1, 5), dr(SystemAccounts.Cash, 50_000), cr(SystemAccounts.OwnersEquity, 50_000)), accountant))
       rev <- ok(books.ledger.reverse(e.header.id, d(1, 6), accountant))
-      _   <- failsWith(books.ledger.reverse(e.header.id, d(1, 7), accountant)) { case LedgerError.AlreadyReversed(_, r) if r == rev.header.id => }
-      tb  <- books.ledger.trialBalance(d(12, 31))
+      _   <- failsWith(books.ledger.reverse(e.header.id, d(1, 7), accountant)) {
+        case LedgerError.AlreadyReversed(_, r) if r == rev.header.id =>
+      }
+      tb <- books.ledger.trialBalance(d(12, 31))
     } yield {
       assertEquals(rev.lines.map(_.side), e.lines.map(_.side.opposite))
       assertEquals(tb.totalDebitMinor.value: Long, tb.totalCreditMinor.value: Long)
-      assert(!tb.rows.exists(_.accountId == SystemAccounts.OwnersEquity.id))   // nets to zero
+      assert(!tb.rows.exists(_.accountId == SystemAccounts.OwnersEquity.id)) // nets to zero
     }
   }
 
   test("foreign-currency entries use the stored rate on or before the entry date") {
     for {
-      _   <- books.ledger.setRate(FxRate(CurrencyCode.EUR, d(2, 1), ExchangeRate.assume(BigDecimal("1.1"))))
-      _   <- books.ledger.setRate(FxRate(CurrencyCode.EUR, d(2, 10), ExchangeRate.assume(BigDecimal("1.2"))))
-      e   <- ok(books.ledger.post(draft(d(2, 9), dr(SystemAccounts.Cash, 1_000), cr(SystemAccounts.OwnersEquity, 1_000))
-                                    .copy(currency = CurrencyCode.EUR), accountant))
-      _   <- failsWith(books.ledger.post(draft(d(1, 31), dr(SystemAccounts.Cash, 1), cr(SystemAccounts.OwnersEquity, 1))
-                                           .copy(currency = CurrencyCode.EUR), accountant)) { case LedgerError.MissingExchangeRate(_, _) => }
+      _ <- books.ledger.setRate(FxRate(CurrencyCode.EUR, d(2, 1), ExchangeRate.assume(BigDecimal("1.1"))))
+      _ <- books.ledger.setRate(FxRate(CurrencyCode.EUR, d(2, 10), ExchangeRate.assume(BigDecimal("1.2"))))
+      e <- ok(books.ledger.post(
+        draft(d(2, 9), dr(SystemAccounts.Cash, 1_000), cr(SystemAccounts.OwnersEquity, 1_000))
+          .copy(currency = CurrencyCode.EUR),
+        accountant
+      ))
+      _ <- failsWith(books.ledger.post(
+        draft(d(1, 31), dr(SystemAccounts.Cash, 1), cr(SystemAccounts.OwnersEquity, 1))
+          .copy(currency = CurrencyCode.EUR),
+        accountant
+      )) { case LedgerError.MissingExchangeRate(_, _) => }
     } yield {
       assertEquals(e.header.exchangeRate.value, BigDecimal("1.1"))
       assertEquals(e.lines.map(_.baseAmountMinor.value: Long), List(1_100L, 1_100L))
@@ -69,10 +76,10 @@ class LedgerIntegrationSuite extends PostgresSuite {
     for {
       upd <- rejectedSql("UPDATE journal_lines SET amount_minor = amount_minor + 1")
       del <- rejectedSql("DELETE FROM journal_entries")
-      unb <- rejectedSql(   // a header without lines; the deferred trigger fires at commit
-               s"""INSERT INTO journal_entries (id, entry_date, currency, exchange_rate, source)
+      unb <- rejectedSql( // a header without lines; the deferred trigger fires at commit
+        s"""INSERT INTO journal_entries (id, entry_date, currency, exchange_rate, source)
                    VALUES ('${UUID.randomUUID()}', '2026-04-01', 'USD', 1, 'manual')"""
-             )
+      )
     } yield {
       assert(upd.contains("append-only"), upd)
       assert(del.contains("append-only"), del)
@@ -85,8 +92,8 @@ class LedgerIntegrationSuite extends PostgresSuite {
     for {
       _ <- books.ledger.setLock(lock)
       _ <- failsWith(books.ledger.post(draft(d(4, 15), dr(SystemAccounts.Cash, 1), cr(SystemAccounts.OwnersEquity, 1)), accountant)) {
-             case LedgerError.PeriodLocked(_, through) if through == d(5, 31) =>
-           }
+        case LedgerError.PeriodLocked(_, through) if through == d(5, 31) =>
+      }
       _ <- ok(books.ledger.post(draft(d(5, 15), dr(SystemAccounts.Cash, 1), cr(SystemAccounts.OwnersEquity, 1)), accountant))
       _ <- books.ledger.clearLock
       _ <- ok(books.ledger.post(draft(d(4, 15), dr(SystemAccounts.Cash, 1), cr(SystemAccounts.OwnersEquity, 1)), accountant))

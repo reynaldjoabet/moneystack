@@ -8,7 +8,7 @@ private[domain] trait Keyed[A] {
   def values: Array[A]
   def key(a: A): String
   def parse(s: String): Either[String, A] = values.find(key(_) == s.toLowerCase).toRight(s"unknown value: $s")
-  def render(a: A): String               = key(a)
+  def render(a: A): String                = key(a)
 }
 
 // ---------- Accounts ----------
@@ -16,7 +16,7 @@ private[domain] trait Keyed[A] {
 enum AccountKind(val key: String) {
   case Brokerage     extends AccountKind("brokerage")
   case Retirement    extends AccountKind("retirement")
-  case TaxAdvantaged extends AccountKind("tax_advantaged")   // PEA, ISA, TFSA, ...
+  case TaxAdvantaged extends AccountKind("tax_advantaged") // PEA, ISA, TFSA, ...
   case Crypto        extends AccountKind("crypto")
   case Savings       extends AccountKind("savings")
   case Cash          extends AccountKind("cash")
@@ -252,21 +252,21 @@ final case class LiabilityStatement(liabilityId: LiabilityId, date: LocalDate, b
 
 sealed trait PortfolioError
 object PortfolioError {
-  final case class AccountNotFound(id: InvestmentAccountId)                          extends PortfolioError
-  final case class AssetNotFound(id: AssetId)                                        extends PortfolioError
-  final case class DuplicateSymbol(symbol: Symbol)                                   extends PortfolioError
-  final case class ActivityNotFound(id: ActivityId)                                  extends PortfolioError
-  final case class InvalidActivity(reason: String)                                   extends PortfolioError
+  final case class AccountNotFound(id: InvestmentAccountId)                                                       extends PortfolioError
+  final case class AssetNotFound(id: AssetId)                                                                     extends PortfolioError
+  final case class DuplicateSymbol(symbol: Symbol)                                                                extends PortfolioError
+  final case class ActivityNotFound(id: ActivityId)                                                               extends PortfolioError
+  final case class InvalidActivity(reason: String)                                                                extends PortfolioError
   final case class InsufficientQuantity(symbol: Symbol, held: BigDecimal, requested: BigDecimal, date: LocalDate) extends PortfolioError
-  final case class CurrencyMismatch(expected: CurrencyCode, got: CurrencyCode)       extends PortfolioError
-  final case class MissingFxRate(from: CurrencyCode, to: CurrencyCode)               extends PortfolioError
-  final case class WrongTracking(id: InvestmentAccountId, expected: String)          extends PortfolioError
-  final case class InvalidPeriod(from: LocalDate, to: LocalDate)                     extends PortfolioError
-  final case class InvalidTargets(reason: String)                                    extends PortfolioError
-  final case class GoalNotFound(id: GoalId)                                          extends PortfolioError
-  final case class LimitNotFound(id: LimitId)                                        extends PortfolioError
-  final case class AltAssetNotFound(id: AltAssetId)                                  extends PortfolioError
-  final case class LiabilityNotFound(id: LiabilityId)                                extends PortfolioError
-  final case class InvalidInput(reason: String)                                      extends PortfolioError
-  final case class ImportFailed(errors: List[String])                                extends PortfolioError
+  final case class CurrencyMismatch(expected: CurrencyCode, got: CurrencyCode)                                    extends PortfolioError
+  final case class MissingFxRate(from: CurrencyCode, to: CurrencyCode)                                            extends PortfolioError
+  final case class WrongTracking(id: InvestmentAccountId, expected: String)                                       extends PortfolioError
+  final case class InvalidPeriod(from: LocalDate, to: LocalDate)                                                  extends PortfolioError
+  final case class InvalidTargets(reason: String)                                                                 extends PortfolioError
+  final case class GoalNotFound(id: GoalId)                                                                       extends PortfolioError
+  final case class LimitNotFound(id: LimitId)                                                                     extends PortfolioError
+  final case class AltAssetNotFound(id: AltAssetId)                                                               extends PortfolioError
+  final case class LiabilityNotFound(id: LiabilityId)                                                             extends PortfolioError
+  final case class InvalidInput(reason: String)                                                                   extends PortfolioError
+  final case class ImportFailed(errors: List[String])                                                             extends PortfolioError
 }

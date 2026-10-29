@@ -35,7 +35,9 @@ final class WorkflowRoutes[F[_]: Async](auth: Request[F] => F[Option[UserId]], w
       accountant(req)(_ => workflow.drafts(kind).flatMap(Ok(_)))
 
     case req @ POST -> Root / "accountant" / Docs(kind) / "drafts" =>
-      accountant(req)(u => decoded[TradeService.NewDocument](req)(b => workflow.saveDraft(kind, None, b, u).flatMap(respond(_)(Created(_)))))
+      accountant(req)(u =>
+        decoded[TradeService.NewDocument](req)(b => workflow.saveDraft(kind, None, b, u).flatMap(respond(_)(Created(_))))
+      )
 
     case req @ PUT -> Root / "accountant" / Docs(kind) / "drafts" / DraftIdVar(id) =>
       accountant(req)(u => decoded[TradeService.NewDocument](req)(b => workflow.saveDraft(kind, Some(id), b, u).flatMap(respond(_)(Ok(_)))))
@@ -63,10 +65,14 @@ final class WorkflowRoutes[F[_]: Async](auth: Request[F] => F[Option[UserId]], w
       accountant(req)(_ => workflow.recurring.flatMap(Ok(_)))
 
     case req @ POST -> Root / "accountant" / Docs(kind) / "recurring" =>
-      accountant(req)(u => decoded[WorkflowService.NewRecurring](req)(b => workflow.createRecurring(kind, b, u).flatMap(respond(_)(Created(_)))))
+      accountant(req)(u =>
+        decoded[WorkflowService.NewRecurring](req)(b => workflow.createRecurring(kind, b, u).flatMap(respond(_)(Created(_))))
+      )
 
     case req @ POST -> Root / "accountant" / "recurring" / RecurringIdVar(id) / "active" =>
-      accountant(req)(_ => decoded[AccountingJson.ActiveBody](req)(b => workflow.setRecurringActive(id, b.active).flatMap(_.fold(NotFound())(Ok(_)))))
+      accountant(req)(_ =>
+        decoded[AccountingJson.ActiveBody](req)(b => workflow.setRecurringActive(id, b.active).flatMap(_.fold(NotFound())(Ok(_))))
+      )
 
     case req @ POST -> Root / "accountant" / "recurring" / "run" :? AsOf(d) =>
       accountant(req)(u => asOf(d)(day => workflow.runRecurring(day, u).flatMap(Ok(_))))
@@ -85,10 +91,15 @@ final class WorkflowRoutes[F[_]: Async](auth: Request[F] => F[Option[UserId]], w
     // ---- reconciliation ----
 
     case req @ GET -> Root / "accountant" / "reconciliations" :? AccountParam(acct) =>
-      accountant(req)(_ => optParam(acct).fold(bad, {
-        case Some(a) => cash.reconciliations(a).flatMap(Ok(_))
-        case None    => bad("account is required")
-      }))
+      accountant(req)(_ =>
+        optParam(acct).fold(
+          bad,
+          {
+            case Some(a) => cash.reconciliations(a).flatMap(Ok(_))
+            case None    => bad("account is required")
+          }
+        )
+      )
 
     case req @ POST -> Root / "accountant" / "reconciliations" =>
       accountant(req)(u => decoded[CashService.NewReconciliation](req)(b => cash.startReconciliation(b, u).flatMap(respond(_)(Created(_)))))
@@ -97,8 +108,11 @@ final class WorkflowRoutes[F[_]: Async](auth: Request[F] => F[Option[UserId]], w
       accountant(req)(_ => cash.reconciliation(id).flatMap(respond(_)(Ok(_))))
 
     case req @ POST -> Root / "accountant" / "reconciliations" / ReconciliationIdVar(id) / "lines" =>
-      accountant(req)(_ => decoded[AccountingJson.ClearBody](req)(b =>
-        cash.setCleared(id, b.lines.map(l => l.entryId -> l.lineNo), b.cleared).flatMap(respond(_)(Ok(_)))))
+      accountant(req)(_ =>
+        decoded[AccountingJson.ClearBody](req)(b =>
+          cash.setCleared(id, b.lines.map(l => l.entryId -> l.lineNo), b.cleared).flatMap(respond(_)(Ok(_)))
+        )
+      )
 
     case req @ POST -> Root / "accountant" / "reconciliations" / ReconciliationIdVar(id) / "close" =>
       accountant(req)(_ => cash.closeReconciliation(id).flatMap(respond(_)(Ok(_))))

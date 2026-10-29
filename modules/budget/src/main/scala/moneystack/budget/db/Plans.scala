@@ -16,6 +16,7 @@ trait Plans[F[_]] {
 
   def createSchedule(s: Schedule): F[Schedule]
   def schedules(owner: UserId): F[List[Schedule]]
+
   /** Moves a schedule on to occurrence `next` inside the caller's transaction, if it is still at `expected`. */
   def advanceIn(s: Session[F], id: ScheduleId, expected: Int, next: Int): F[Boolean]
   def setScheduleActive(owner: UserId, id: ScheduleId, active: Boolean): F[Option[Schedule]]
@@ -32,8 +33,10 @@ trait Plans[F[_]] {
 
 object Plans {
 
-  import Codecs.{budget as budgetC, budgetId as budgetIdC, limit as limitC, objective as objectiveC, objectiveId as objectiveIdC,
-                 rule as ruleC, ruleId as ruleIdC, schedule as scheduleC, scheduleId as scheduleIdC, userId as userIdC}
+  import Codecs.{
+    budget as budgetC, budgetId as budgetIdC, limit as limitC, objective as objectiveC, objectiveId as objectiveIdC,
+    rule as ruleC, ruleId as ruleIdC, schedule as scheduleC, scheduleId as scheduleIdC, userId as userIdC
+  }
   import skunk.codec.all.{bool, int4, int8}
 
   private def deleted(c: skunk.data.Completion) = c match {
@@ -44,10 +47,12 @@ object Plans {
   def make[F[_]: Concurrent](pool: Resource[F, Session[F]]): Plans[F] = new Plans[F] {
 
     def createBudget(b: Budget): F[Budget] =
-      pool.use(s => s.transaction.use { _ =>
-        s.prepare(Q.insertBudget).flatMap(_.execute(b)) *>
-          s.prepare(Q.insertLimit).flatMap(pc => b.categoryLimits.traverse_(l => pc.execute((b.id, l)))).as(b)
-      })
+      pool.use(s =>
+        s.transaction.use { _ =>
+          s.prepare(Q.insertBudget).flatMap(_.execute(b)) *>
+            s.prepare(Q.insertLimit).flatMap(pc => b.categoryLimits.traverse_(l => pc.execute((b.id, l)))).as(b)
+        }
+      )
 
     def budgets(owner: UserId): F[List[Budget]] =
       pool.use { s =>
@@ -57,7 +62,8 @@ object Plans {
         } yield bs.map(b => b.copy(categoryLimits = ls.filter(_._1 == b.id).map(_._2)))
       }
 
-    def deleteBudget(owner: UserId, id: BudgetId): F[Boolean] = pool.use(_.prepare(Q.deleteBudget).flatMap(_.execute((id, owner)))).map(deleted)
+    def deleteBudget(owner: UserId, id: BudgetId): F[Boolean] =
+      pool.use(_.prepare(Q.deleteBudget).flatMap(_.execute((id, owner)))).map(deleted)
 
     def createSchedule(s: Schedule): F[Schedule] = pool.use(_.prepare(Q.insertSchedule).flatMap(_.unique(s)))
 

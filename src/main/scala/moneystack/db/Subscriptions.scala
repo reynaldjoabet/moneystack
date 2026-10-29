@@ -19,8 +19,10 @@ trait Subscriptions[F[_]] {
 
 object Subscriptions {
 
-  import Codecs.{plan as planC, planId as planIdC, subscription as subC, subscriptionId as subIdC,
-                 subscriptionStatus as subStatusC, userId as userIdC, payment as paymentC}
+  import Codecs.{
+    plan as planC, planId as planIdC, subscription as subC, subscriptionId as subIdC,
+    subscriptionStatus as subStatusC, userId as userIdC, payment as paymentC
+  }
   import skunk.codec.all.int4
 
   def make[F[_]: Concurrent](pool: Resource[F, Session[F]]): Subscriptions[F] =

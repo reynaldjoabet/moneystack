@@ -17,18 +17,18 @@ object AccountingJson {
     Codec.from(Decoder.decodeString.emap(parse), Encoder.encodeString.contramap(render))
 
   // ---- enums ----
-  given Codec[AccountType]    = enumCodec(AccountType.render, AccountType.parse)
-  given Codec[Side]           = enumCodec(Side.render, Side.parse)
-  given Codec[JournalSource]  = enumCodec(JournalSource.render, JournalSource.parse)
-  given Codec[ContactKind]    = enumCodec(ContactKind.render, ContactKind.parse)
-  given Codec[ItemKind]       = enumCodec(ItemKind.render, ItemKind.parse)
-  given Codec[DocumentKind]   = enumCodec(DocumentKind.render, DocumentKind.parse)
-  given Codec[BankTxStatus]   = enumCodec(BankTxStatus.render, BankTxStatus.parse)
-  given Codec[RuleApplyTo]    = enumCodec(RuleApplyTo.render, RuleApplyTo.parse)
-  given Codec[Conjunction]    = enumCodec(Conjunction.render, Conjunction.parse)
-  given Codec[RuleField]      = enumCodec(RuleField.render, RuleField.parse)
-  given Codec[RuleOperator]   = enumCodec(RuleOperator.render, RuleOperator.parse)
-  given Encoder[RootType]     = Encoder.encodeString.contramap(_.toString.toLowerCase)
+  given Codec[AccountType]      = enumCodec(AccountType.render, AccountType.parse)
+  given Codec[Side]             = enumCodec(Side.render, Side.parse)
+  given Codec[JournalSource]    = enumCodec(JournalSource.render, JournalSource.parse)
+  given Codec[ContactKind]      = enumCodec(ContactKind.render, ContactKind.parse)
+  given Codec[ItemKind]         = enumCodec(ItemKind.render, ItemKind.parse)
+  given Codec[DocumentKind]     = enumCodec(DocumentKind.render, DocumentKind.parse)
+  given Codec[BankTxStatus]     = enumCodec(BankTxStatus.render, BankTxStatus.parse)
+  given Codec[RuleApplyTo]      = enumCodec(RuleApplyTo.render, RuleApplyTo.parse)
+  given Codec[Conjunction]      = enumCodec(Conjunction.render, Conjunction.parse)
+  given Codec[RuleField]        = enumCodec(RuleField.render, RuleField.parse)
+  given Codec[RuleOperator]     = enumCodec(RuleOperator.render, RuleOperator.parse)
+  given Encoder[RootType]       = Encoder.encodeString.contramap(_.toString.toLowerCase)
   given Encoder[DocumentStatus] = Encoder.encodeString.contramap {
     case DocumentStatus.Open          => "open"
     case DocumentStatus.PartiallyPaid => "partially_paid"
@@ -47,8 +47,8 @@ object AccountingJson {
   given Encoder[JournalEntry]  = Encoder.instance { e =>
     Encoder[JournalHeader].apply(e.header).deepMerge(Json.obj("lines" -> Encoder[List[PostedLine]].apply(e.lines)))
   }
-  given Encoder[FxRate]        = deriveEncoder
-  given Encoder[LedgerLock]    = deriveEncoder
+  given Encoder[FxRate]     = deriveEncoder
+  given Encoder[LedgerLock] = deriveEncoder
 
   given Encoder[FinancialReports.Line]                 = deriveEncoder
   given Encoder[FinancialReports.Section]              = deriveEncoder
@@ -85,22 +85,29 @@ object AccountingJson {
   given Encoder[TradeReports.InventoryValuation] = deriveEncoder
 
   // ---- banking ----
-  given Codec[RuleCondition]   = deriveCodec
-  given Encoder[BankRule]      = deriveEncoder
-  given Encoder[BankTransaction] = deriveEncoder
+  given Codec[RuleCondition]                 = deriveCodec
+  given Encoder[BankRule]                    = deriveEncoder
+  given Encoder[BankTransaction]             = deriveEncoder
   given Encoder[BankingService.ImportResult] = Encoder.instance { r =>
     Json.obj(
       "imported"    -> Json.fromInt(r.imported),
       "duplicates"  -> Json.fromInt(r.duplicates),
       "matched"     -> Json.fromInt(r.matched),
       "categorized" -> Json.fromInt(r.categorized),
-      "failed"      -> Json.arr(r.failed.map { case (id, err) => Json.obj("id" -> Json.fromString(id.value.toString), "error" -> Json.fromString(err)) }*)
+      "failed"      -> Json.arr(r.failed.map { case (id, err) =>
+        Json.obj("id" -> Json.fromString(id.value.toString), "error" -> Json.fromString(err))
+      }*)
     )
   }
 
   // ---- request bodies ----
-  final case class CreateAccountBody(code: AccountCode, name: Title, accountType: AccountType,
-                                     currency: Option[CurrencyCode], parentId: Option[AccountId])
+  final case class CreateAccountBody(
+      code: AccountCode,
+      name: Title,
+      accountType: AccountType,
+      currency: Option[CurrencyCode],
+      parentId: Option[AccountId]
+  )
   given Decoder[CreateAccountBody] = deriveDecoder
 
   final case class ActiveBody(active: Boolean)
@@ -110,8 +117,14 @@ object AccountingJson {
   given Decoder[DateBody] = deriveDecoder
 
   given Decoder[JournalLine] = deriveDecoder
-  final case class PostJournalBody(date: LocalDate, reference: Option[JournalRef], memo: Option[Body],
-                                   currency: CurrencyCode, exchangeRate: Option[ExchangeRate], lines: List[JournalLine])
+  final case class PostJournalBody(
+      date: LocalDate,
+      reference: Option[JournalRef],
+      memo: Option[Body],
+      currency: CurrencyCode,
+      exchangeRate: Option[ExchangeRate],
+      lines: List[JournalLine]
+  )
   given Decoder[PostJournalBody] = deriveDecoder
 
   final case class SetRateBody(currency: CurrencyCode, date: LocalDate, rate: ExchangeRate)
@@ -145,18 +158,40 @@ object AccountingJson {
     import WorkflowService.Payload.given
     summon[Codec[TradeService.NewDocument]]
   }
-  given Encoder[Draft] = Encoder.instance(d => Json.obj("id" -> d.id.asJson, "kind" -> d.kind.asJson, "contactId" -> d.contactId.asJson,
-                                                          "createdBy" -> d.createdBy.asJson, "createdAt" -> d.createdAt.asJson, "updatedAt" -> d.updatedAt.asJson))
-  given Encoder[WorkflowService.DraftView]     = deriveEncoder
-  given Encoder[DocumentEvent]                 = deriveEncoder
-  given Encoder[Recurring] = Encoder.instance(r => Json.obj(
-    "id" -> r.id.asJson, "kind" -> r.kind.asJson, "contactId" -> r.contactId.asJson, "every" -> r.every.asJson, "interval" -> r.interval.asJson,
-    "startDate" -> r.startDate.asJson, "endDate" -> r.endDate.asJson, "maxOccurrences" -> r.maxOccurrences.asJson,
-    "issued" -> r.nextIndex.asJson, "active" -> r.active.asJson, "createdAt" -> r.createdAt.asJson))
+  given Encoder[Draft] = Encoder.instance(d =>
+    Json.obj(
+      "id"        -> d.id.asJson,
+      "kind"      -> d.kind.asJson,
+      "contactId" -> d.contactId.asJson,
+      "createdBy" -> d.createdBy.asJson,
+      "createdAt" -> d.createdAt.asJson,
+      "updatedAt" -> d.updatedAt.asJson
+    )
+  )
+  given Encoder[WorkflowService.DraftView] = deriveEncoder
+  given Encoder[DocumentEvent]             = deriveEncoder
+  given Encoder[Recurring]                 = Encoder.instance(r =>
+    Json.obj(
+      "id"             -> r.id.asJson,
+      "kind"           -> r.kind.asJson,
+      "contactId"      -> r.contactId.asJson,
+      "every"          -> r.every.asJson,
+      "interval"       -> r.interval.asJson,
+      "startDate"      -> r.startDate.asJson,
+      "endDate"        -> r.endDate.asJson,
+      "maxOccurrences" -> r.maxOccurrences.asJson,
+      "issued"         -> r.nextIndex.asJson,
+      "active"         -> r.active.asJson,
+      "createdAt"      -> r.createdAt.asJson
+    )
+  )
   given Encoder[WorkflowService.RecurringView] = deriveEncoder
-  given Encoder[WorkflowService.RunReport] = Encoder.instance(r => Json.obj(
-    "issued" -> r.issued.asJson,
-    "failed" -> r.failed.map { case (id, e) => Json.obj("recurringId" -> id.asJson, "error" -> e.asJson) }.asJson))
+  given Encoder[WorkflowService.RunReport]     = Encoder.instance(r =>
+    Json.obj(
+      "issued" -> r.issued.asJson,
+      "failed" -> r.failed.map { case (id, e) => Json.obj("recurringId" -> id.asJson, "error" -> e.asJson) }.asJson
+    )
+  )
   given Encoder[Reconciliation]     = deriveEncoder
   given Encoder[ReconLine]          = deriveEncoder
   given Encoder[ReconciliationView] = deriveEncoder

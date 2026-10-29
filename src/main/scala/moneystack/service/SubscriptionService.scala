@@ -28,8 +28,8 @@ object SubscriptionService {
 
   sealed trait Error
   object Error {
-    case object UserNotFound                extends Error
-    case object PlanNotFound                extends Error
+    case object UserNotFound                     extends Error
+    case object PlanNotFound                     extends Error
     final case class GatewayFailure(msg: String) extends Error
   }
 
@@ -49,43 +49,43 @@ object SubscriptionService {
             case None       => Async[F].pure(Left(Error.PlanNotFound))
             case Some(plan) =>
               for {
-                now   <- Async[F].delay(Instant.now())
-                end    = nextPeriodEnd(now, plan.interval)
-                idem   = s"${userId.value}:${planId.value}:${now.toEpochMilli / (1000 * 60 * 60)}"
+                now <- Async[F].delay(Instant.now())
+                end  = nextPeriodEnd(now, plan.interval)
+                idem = s"${userId.value}:${planId.value}:${now.toEpochMilli / (1000 * 60 * 60)}"
                 attempt <- gateway.startRecurring(u.email, plan.priceMinor, plan.currency, plan.interval, idem).attempt
                 result  <- attempt match {
-                             case Left(err) => Async[F].pure(Left(Error.GatewayFailure(err.getMessage)))
-                             case Right(setup) =>
-                               for {
-                                 sub <- subscriptions.createSubscription(Subscription(
-                                          id                  = SubscriptionId.assume(UUID.randomUUID()),
-                                          userId              = userId,
-                                          planId              = planId,
-                                          status              = SubscriptionStatus.Active,
-                                          currentPeriodStart  = now,
-                                          currentPeriodEnd    = end,
-                                          cancelAt            = None,
-                                          cloudpaymentsRef    = Some(setup.ref)
-                                        ))
-                                 payment <- subscriptions.insertPayment(Payment(
-                                              id               = PaymentId.assume(UUID.randomUUID()),
-                                              userId           = userId,
-                                              subscriptionId   = Some(sub.id),
-                                              courseId         = None,
-                                              amountMinor      = plan.priceMinor,
-                                              currency         = plan.currency,
-                                              status           = PaymentStatus.Captured,
-                                              cloudpaymentsRef = setup.ref,
-                                              createdAt        = now
-                                            ))
-                                 // Mirror to CRM + the ledger; non-fatal if these fail. Ledger
-                                 // posting is idempotent per payment, so it can be replayed.
-                                 _   <- crm.recordSubscriptionChange(userId, sub).attempt.void
-                                 _   <- crm.upsertContact(userId, u.email, u.displayName).attempt.void
-                                 _   <- crm.recordPayment(userId, payment).attempt.void
-                                 _   <- accounting.postRevenue(userId, payment).attempt.void
-                               } yield Right(sub)
-                           }
+                  case Left(err)    => Async[F].pure(Left(Error.GatewayFailure(err.getMessage)))
+                  case Right(setup) =>
+                    for {
+                      sub <- subscriptions.createSubscription(Subscription(
+                        id = SubscriptionId.assume(UUID.randomUUID()),
+                        userId = userId,
+                        planId = planId,
+                        status = SubscriptionStatus.Active,
+                        currentPeriodStart = now,
+                        currentPeriodEnd = end,
+                        cancelAt = None,
+                        cloudpaymentsRef = Some(setup.ref)
+                      ))
+                      payment <- subscriptions.insertPayment(Payment(
+                        id = PaymentId.assume(UUID.randomUUID()),
+                        userId = userId,
+                        subscriptionId = Some(sub.id),
+                        courseId = None,
+                        amountMinor = plan.priceMinor,
+                        currency = plan.currency,
+                        status = PaymentStatus.Captured,
+                        cloudpaymentsRef = setup.ref,
+                        createdAt = now
+                      ))
+                      // Mirror to CRM + the ledger; non-fatal if these fail. Ledger
+                      // posting is idempotent per payment, so it can be replayed.
+                      _ <- crm.recordSubscriptionChange(userId, sub).attempt.void
+                      _ <- crm.upsertContact(userId, u.email, u.displayName).attempt.void
+                      _ <- crm.recordPayment(userId, payment).attempt.void
+                      _ <- accounting.postRevenue(userId, payment).attempt.void
+                    } yield Right(sub)
+                }
               } yield result
           }
       }

@@ -5,7 +5,12 @@ import moneystack.domain.CurrencyCode
 import cats.effect.Sync
 
 final case class DbConfig(
-    host: String, port: Int, user: String, password: Option[String], database: String, poolMax: Int
+    host: String,
+    port: Int,
+    user: String,
+    password: Option[String],
+    database: String,
+    poolMax: Int
 )
 
 final case class HttpConfig(host: String, port: Int)
@@ -23,12 +28,12 @@ object AppConfig {
 
     AppConfig(
       db = DbConfig(
-        host     = env("DB_HOST").getOrElse("localhost"),
-        port     = int("DB_PORT", 5432),
-        user     = req("DB_USER"),
+        host = env("DB_HOST").getOrElse("localhost"),
+        port = int("DB_PORT", 5432),
+        user = req("DB_USER"),
         password = env("DB_PASSWORD"),
         database = req("DB_NAME"),
-        poolMax  = int("DB_POOL_MAX", 8)
+        poolMax = int("DB_POOL_MAX", 8)
       ),
       http = HttpConfig(
         host = env("HTTP_HOST").getOrElse("0.0.0.0"),
@@ -36,7 +41,7 @@ object AppConfig {
       ),
       ledger = LedgerConfig(
         baseCurrency = CurrencyCode.either(env("LEDGER_BASE_CURRENCY").getOrElse("USD"))
-                         .fold(err => sys.error(s"LEDGER_BASE_CURRENCY: $err"), identity)
+          .fold(err => sys.error(s"LEDGER_BASE_CURRENCY: $err"), identity)
       )
     )
   }

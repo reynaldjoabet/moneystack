@@ -28,6 +28,7 @@ trait LedgerService[F[_]] {
 
   def post(draft: LedgerService.Draft, by: UserId): F[Either[LedgerError, JournalEntry]]
   def reverse(id: JournalEntryId, date: LocalDate, by: UserId): F[Either[LedgerError, JournalEntry]]
+
   /** Posts on behalf of another system; re-posting the same `(source, sourceId)` returns the original entry. */
   def postAutomated(draft: LedgerService.Draft, source: JournalSource, sourceId: UUID): F[Either[LedgerError, JournalEntry]]
   def entry(id: JournalEntryId): F[Option[JournalEntry]]
@@ -96,9 +97,23 @@ object LedgerService {
     val ExchangeGainLoss     = acct("7000", "Exchange gain or loss", AccountType.OtherExpense)
 
     val all: List[SystemAccount] = List(
-      Cash, PaymentClearing, Receivables, InputTax, Inventory, Payables, TaxPayable, OwnersEquity,
-      OpeningBalanceEquity, SubscriptionRevenue, CourseRevenue, Sales, ProcessingFees, InventoryAdjustments,
-      CostOfGoodsSold, GeneralExpenses, ExchangeGainLoss
+      Cash,
+      PaymentClearing,
+      Receivables,
+      InputTax,
+      Inventory,
+      Payables,
+      TaxPayable,
+      OwnersEquity,
+      OpeningBalanceEquity,
+      SubscriptionRevenue,
+      CourseRevenue,
+      Sales,
+      ProcessingFees,
+      InventoryAdjustments,
+      CostOfGoodsSold,
+      GeneralExpenses,
+      ExchangeGainLoss
     )
   }
 
@@ -128,16 +143,24 @@ object LedgerService {
           _ <- Either.cond(!existing.exists(_.code == b.code), (), LedgerError.DuplicateAccountCode(b.code))
           p <- parent
           _ <- p.filter(_.accountType.root != b.accountType.root)
-                 .map(pa => LedgerError.ParentTypeMismatch(pa.accountType.root, b.accountType.root))
-                 .toLeft(())
+            .map(pa => LedgerError.ParentTypeMismatch(pa.accountType.root, b.accountType.root))
+            .toLeft(())
         } yield ()
 
         checked.traverse { _ =>
           for {
             id  <- Async[F].delay(AccountId.assume(UUID.randomUUID()))
             now <- Async[F].delay(Instant.now())
-            a   <- ledgerAccounts.create(Account(id, b.code, b.name, b.accountType,
-                                                 b.currency.getOrElse(base), b.parentId, active = true, now))
+            a   <- ledgerAccounts.create(Account(
+              id,
+              b.code,
+              b.name,
+              b.accountType,
+              b.currency.getOrElse(base),
+              b.parentId,
+              active = true,
+              now
+            ))
           } yield a
         }
       }
@@ -147,7 +170,7 @@ object LedgerService {
 
     def post(draft: Draft, by: UserId): F[Either[LedgerError, JournalEntry]] =
       (posting.chart, posting.rate(draft.currency, draft.exchangeRate, draft.date)).tupled.flatMap {
-        case (_, Left(err)) => Async[F].pure(Left(err))
+        case (_, Left(err))       => Async[F].pure(Left(err))
         case (chart, Right(rate)) =>
           posting.header(draft.date, draft.reference, draft.memo, draft.currency, rate, JournalSource.Manual, None, Some(by))
             .flatMap(h => db.txE(s => posting.postIn(s, h, draft.lines, chart)))
@@ -158,7 +181,7 @@ object LedgerService {
 
     def postAutomated(draft: Draft, source: JournalSource, sourceId: UUID): F[Either[LedgerError, JournalEntry]] =
       (posting.chart, posting.rate(draft.currency, draft.exchangeRate, draft.date)).tupled.flatMap {
-        case (_, Left(err)) => Async[F].pure(Left(err))
+        case (_, Left(err))       => Async[F].pure(Left(err))
         case (chart, Right(rate)) =>
           posting.header(draft.date, draft.reference, draft.memo, draft.currency, rate, source, Some(sourceId), None).flatMap { h =>
             Ledger.entry(h, draft.lines, base, chart) match {

@@ -28,6 +28,7 @@ trait NetWorthService[F[_]] {
   def schedule(owner: UserId, id: LiabilityId): F[Either[PortfolioError, NetWorthService.Schedule]]
 
   def netWorth(owner: UserId, asOf: LocalDate, base: CurrencyCode): F[Either[PortfolioError, NetWorthService.NetWorth]]
+
   /** Month-end points from `from` to `to`, plus `to` itself. */
   def history(owner: UserId, from: LocalDate, to: LocalDate, base: CurrencyCode): F[Either[PortfolioError, List[NetWorthService.Point]]]
 }
@@ -59,12 +60,26 @@ object NetWorthService {
       securedBy: Option[AltAssetId]
   )
 
-  final case class Schedule(liability: Liability, monthlyPayment: BigDecimal, totalInterest: BigDecimal, payoffDate: Option[LocalDate], rows: List[AmortizationRow])
+  final case class Schedule(
+      liability: Liability,
+      monthlyPayment: BigDecimal,
+      totalInterest: BigDecimal,
+      payoffDate: Option[LocalDate],
+      rows: List[AmortizationRow]
+  )
 
   final case class Line(id: UUID, name: Title, kind: String, value: BigDecimal)
 
-  final case class NetWorth(asOf: LocalDate, currency: CurrencyCode, accounts: List[Line], assets: List[Line], liabilities: List[Line],
-                            totalAssets: BigDecimal, totalLiabilities: BigDecimal, netWorth: BigDecimal)
+  final case class NetWorth(
+      asOf: LocalDate,
+      currency: CurrencyCode,
+      accounts: List[Line],
+      assets: List[Line],
+      liabilities: List[Line],
+      totalAssets: BigDecimal,
+      totalLiabilities: BigDecimal,
+      netWorth: BigDecimal
+  )
 
   final case class Point(date: LocalDate, investments: BigDecimal, otherAssets: BigDecimal, liabilities: BigDecimal, netWorth: BigDecimal)
 
@@ -78,7 +93,9 @@ object NetWorthService {
     if (date.isBefore(a.purchaseDate)) BigDecimal(0)
     else {
       val gross = valuations.filter(v => v.assetId == a.id && !v.date.isAfter(date)).maxByOption(_.date).map(_.value)
-        .orElse(a.vehicleClass.map(c => Depreciation.value(a.purchasePrice, a.purchaseDate, c, a.pace.getOrElse(DepreciationPace.Average), date)))
+        .orElse(a.vehicleClass.map(c =>
+          Depreciation.value(a.purchasePrice, a.purchaseDate, c, a.pace.getOrElse(DepreciationPace.Average), date)
+        ))
         .getOrElse(a.purchasePrice)
       gross * a.ownershipBps.value / 10_000
     }
@@ -93,18 +110,42 @@ object NetWorthService {
 
       def createAltAsset(owner: UserId, b: NewAltAsset): F[Either[PortfolioError, AltAsset]] = {
         val checked = for {
-          _ <- Either.cond(b.purchasePrice >= 0 && b.acquisitionCosts.forall(_ >= 0), (), PortfolioError.InvalidInput("prices must not be negative"))
-          _ <- Either.cond((b.kind == AltAssetKind.Vehicle) == b.vehicleClass.isDefined, (), PortfolioError.InvalidInput("vehicles, and only vehicles, take a vehicle class"))
-          _ <- Either.cond(b.ownershipBps.forall(_.value > 0) && b.ownershipBps.forall(_.value <= 10_000), (), PortfolioError.InvalidInput("ownership must be between 1 and 10000 bps"))
+          _ <- Either.cond(
+            b.purchasePrice >= 0 && b.acquisitionCosts.forall(_ >= 0),
+            (),
+            PortfolioError.InvalidInput("prices must not be negative")
+          )
+          _ <- Either.cond(
+            (b.kind == AltAssetKind.Vehicle) == b.vehicleClass.isDefined,
+            (),
+            PortfolioError.InvalidInput("vehicles, and only vehicles, take a vehicle class")
+          )
+          _ <- Either.cond(
+            b.ownershipBps.forall(_.value > 0) && b.ownershipBps.forall(_.value <= 10_000),
+            (),
+            PortfolioError.InvalidInput("ownership must be between 1 and 10000 bps")
+          )
         } yield ()
         checked.traverse { _ =>
           for {
             id  <- Async[F].delay(AltAssetId.assume(UUID.randomUUID()))
             now <- Async[F].delay(Instant.now())
-            a   <- wealth.createAsset(AltAsset(id, owner, b.kind, b.name, b.currency, b.purchasePrice, b.purchaseDate,
-                                               b.ownershipBps.getOrElse(Bps.assume(10_000)), b.acquisitionCosts.getOrElse(BigDecimal(0)),
-                                               b.vehicleClass, b.vehicleClass.map(_ => b.pace.getOrElse(DepreciationPace.Average)), b.notes,
-                                               active = true, now))
+            a   <- wealth.createAsset(AltAsset(
+              id,
+              owner,
+              b.kind,
+              b.name,
+              b.currency,
+              b.purchasePrice,
+              b.purchaseDate,
+              b.ownershipBps.getOrElse(Bps.assume(10_000)),
+              b.acquisitionCosts.getOrElse(BigDecimal(0)),
+              b.vehicleClass,
+              b.vehicleClass.map(_ => b.pace.getOrElse(DepreciationPace.Average)),
+              b.notes,
+              active = true,
+              now
+            ))
           } yield a
         }
       }
@@ -124,7 +165,11 @@ object NetWorthService {
         wealth.assets(owner).flatMap { as =>
           val checked = for {
             _ <- Either.cond(b.principal > 0, (), PortfolioError.InvalidInput("the principal must be positive"))
-            _ <- Either.cond(b.annualRate >= 0 && b.annualRate < 1, (), PortfolioError.InvalidInput("the annual rate is a fraction between 0 and 1"))
+            _ <- Either.cond(
+              b.annualRate >= 0 && b.annualRate < 1,
+              (),
+              PortfolioError.InvalidInput("the annual rate is a fraction between 0 and 1")
+            )
             _ <- Either.cond(b.termMonths >= 1 && b.termMonths <= 600, (), PortfolioError.InvalidInput("the term must be 1 to 600 months"))
             _ <- Either.cond(b.extraMonthlyPayment.forall(_ >= 0), (), PortfolioError.InvalidInput("extra payments must not be negative"))
             _ <- b.securedBy.traverse_(id => as.find(_.id == id).toRight(PortfolioError.AltAssetNotFound(id)))
@@ -133,13 +178,27 @@ object NetWorthService {
             for {
               id  <- Async[F].delay(LiabilityId.assume(UUID.randomUUID()))
               now <- Async[F].delay(Instant.now())
-              l   <- wealth.createLiability(Liability(id, owner, b.kind, b.name, b.currency, b.principal, b.annualRate, b.termMonths,
-                                                      b.startDate, b.extraMonthlyPayment.getOrElse(BigDecimal(0)), b.securedBy, active = true, now))
+              l   <- wealth.createLiability(Liability(
+                id,
+                owner,
+                b.kind,
+                b.name,
+                b.currency,
+                b.principal,
+                b.annualRate,
+                b.termMonths,
+                b.startDate,
+                b.extraMonthlyPayment.getOrElse(BigDecimal(0)),
+                b.securedBy,
+                active = true,
+                now
+              ))
             } yield l
           }
         }
 
-      def setLiabilityActive(owner: UserId, id: LiabilityId, active: Boolean): F[Option[Liability]] = wealth.setLiabilityActive(owner, id, active)
+      def setLiabilityActive(owner: UserId, id: LiabilityId, active: Boolean): F[Option[Liability]] =
+        wealth.setLiabilityActive(owner, id, active)
 
       def addStatement(owner: UserId, s: LiabilityStatement): F[Either[PortfolioError, LiabilityStatement]] =
         wealth.liabilities(owner).flatMap { ls =>
@@ -151,12 +210,22 @@ object NetWorthService {
       def schedule(owner: UserId, id: LiabilityId): F[Either[PortfolioError, Schedule]] =
         wealth.liabilities(owner).map(_.find(_.id == id).toRight(PortfolioError.LiabilityNotFound(id)).map { l =>
           val rows = Amortization.forLiability(l)
-          Schedule(l, Amortization.monthlyPayment(l.principal, l.annualRate, l.termMonths), money(rows.map(_.interest).sum),
-                   rows.lastOption.map(_.date), rows)
+          Schedule(
+            l,
+            Amortization.monthlyPayment(l.principal, l.annualRate, l.termMonths),
+            money(rows.map(_.interest).sum),
+            rows.lastOption.map(_.date),
+            rows
+          )
         })
 
-      private final case class Parts(alt: List[AltAsset], valuations: List[AltValuation], liabilities: List[Liability],
-                                     statements: List[LiabilityStatement], fx: FxTable)
+      private final case class Parts(
+          alt: List[AltAsset],
+          valuations: List[AltValuation],
+          liabilities: List[Liability],
+          statements: List[LiabilityStatement],
+          fx: FxTable
+      )
 
       private def parts(owner: UserId): R[Parts] =
         lift((wealth.assets(owner), wealth.valuations(owner), wealth.liabilities(owner), wealth.statements(owner), market.fxRates()).mapN {
@@ -168,10 +237,14 @@ object NetWorthService {
 
       private def otherLines(p: Parts, base: CurrencyCode, date: LocalDate): R[(List[Line], List[Line])] =
         for {
-          assets <- p.alt.traverse(a => toBase(p, assetValue(a, p.valuations, date), a.currency, base, date)
-                      .map(v => Line(a.id.value, a.name, a.kind.key, money(v))))
-          owed   <- p.liabilities.traverse(l => toBase(p, Amortization.balanceOn(l, p.statements.filter(_.liabilityId == l.id), date), l.currency, base, date)
-                      .map(v => Line(l.id.value, l.name, l.kind.key, money(v))))
+          assets <- p.alt.traverse(a =>
+            toBase(p, assetValue(a, p.valuations, date), a.currency, base, date)
+              .map(v => Line(a.id.value, a.name, a.kind.key, money(v)))
+          )
+          owed <- p.liabilities.traverse(l =>
+            toBase(p, Amortization.balanceOn(l, p.statements.filter(_.liabilityId == l.id), date), l.currency, base, date)
+              .map(v => Line(l.id.value, l.name, l.kind.key, money(v)))
+          )
         } yield (assets.filter(_.value != 0), owed.filter(_.value != 0))
 
       def netWorth(owner: UserId, asOf: LocalDate, base: CurrencyCode): F[Either[PortfolioError, NetWorth]] =
@@ -193,17 +266,18 @@ object NetWorthService {
           _      <- EitherT.cond[F](!from.isAfter(to), (), PortfolioError.InvalidPeriod(from, to): PortfolioError)
           series <- EitherT(portfolio.history(owner, None, from, to, base))
           p      <- parts(owner)
-          dates   = (Iterator.iterate(YearMonth.from(from))(_.plusMonths(1)).takeWhile(!_.isAfter(YearMonth.from(to)))
-                      .map(_.atEndOfMonth).filter(d => !d.isAfter(to)).toList :+ to).distinct
-          byDate  = series.map(d => d.date -> d.total).toMap
+          dates =
+            (Iterator.iterate(YearMonth.from(from))(_.plusMonths(1)).takeWhile(!_.isAfter(YearMonth.from(to)))
+              .map(_.atEndOfMonth).filter(d => !d.isAfter(to)).toList :+ to).distinct
+          byDate = series.map(d => d.date -> d.total).toMap
           points <- dates.traverse { d =>
-                      otherLines(p, base, d).map { case (assets, owed) =>
-                        val inv = byDate.getOrElse(d, BigDecimal(0))
-                        val oth = assets.map(_.value).sum
-                        val lia = owed.map(_.value).sum
-                        Point(d, money(inv), money(oth), money(lia), money(inv + oth - lia))
-                      }
-                    }
+            otherLines(p, base, d).map { case (assets, owed) =>
+              val inv = byDate.getOrElse(d, BigDecimal(0))
+              val oth = assets.map(_.value).sum
+              val lia = owed.map(_.value).sum
+              Point(d, money(inv), money(oth), money(lia), money(inv + oth - lia))
+            }
+          }
         } yield points).value
     }
 }

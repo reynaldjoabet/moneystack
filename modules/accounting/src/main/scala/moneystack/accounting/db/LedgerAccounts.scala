@@ -10,6 +10,7 @@ import skunk.implicits.*
 /** Chart of accounts. */
 trait LedgerAccounts[F[_]] {
   def create(a: Account): F[Account]
+
   /** Inserts unless an account with the same id or code exists. */
   def ensure(a: Account): F[Unit]
   def list(): F[List[Account]]

@@ -52,7 +52,7 @@ enum AccountType(val root: RootType, val key: String) {
 
   /** The side on which a positive balance accrues. */
   def normal: Side = root match {
-    case RootType.Asset | RootType.Expense                     => Side.Debit
+    case RootType.Asset | RootType.Expense                      => Side.Debit
     case RootType.Liability | RootType.Equity | RootType.Income => Side.Credit
   }
 
@@ -177,58 +177,58 @@ final case class LedgerRow(
 sealed trait LedgerError
 object LedgerError {
   // journal
-  case object TooFewLines                                                           extends LedgerError
-  final case class Unbalanced(debitMinor: Long, creditMinor: Long)                  extends LedgerError
-  final case class UnknownAccount(id: AccountId)                                    extends LedgerError
-  final case class InactiveAccount(code: AccountCode)                               extends LedgerError
+  case object TooFewLines                                                                          extends LedgerError
+  final case class Unbalanced(debitMinor: Long, creditMinor: Long)                                 extends LedgerError
+  final case class UnknownAccount(id: AccountId)                                                   extends LedgerError
+  final case class InactiveAccount(code: AccountCode)                                              extends LedgerError
   final case class CurrencyMismatch(code: AccountCode, account: CurrencyCode, entry: CurrencyCode) extends LedgerError
-  final case class PeriodLocked(date: LocalDate, lockThrough: LocalDate)            extends LedgerError
-  final case class MissingExchangeRate(currency: CurrencyCode, date: LocalDate)     extends LedgerError
-  final case class DuplicateAccountCode(code: AccountCode)                          extends LedgerError
-  final case class UnknownParent(id: AccountId)                                     extends LedgerError
-  final case class ParentTypeMismatch(parent: RootType, child: RootType)            extends LedgerError
-  final case class EntryNotFound(id: JournalEntryId)                                extends LedgerError
-  final case class AlreadyReversed(id: JournalEntryId, reversal: JournalEntryId)    extends LedgerError
-  final case class DuplicatePosting(source: JournalSource, sourceId: UUID)          extends LedgerError
-  final case class InvalidPeriod(from: LocalDate, to: LocalDate)                    extends LedgerError
+  final case class PeriodLocked(date: LocalDate, lockThrough: LocalDate)                           extends LedgerError
+  final case class MissingExchangeRate(currency: CurrencyCode, date: LocalDate)                    extends LedgerError
+  final case class DuplicateAccountCode(code: AccountCode)                                         extends LedgerError
+  final case class UnknownParent(id: AccountId)                                                    extends LedgerError
+  final case class ParentTypeMismatch(parent: RootType, child: RootType)                           extends LedgerError
+  final case class EntryNotFound(id: JournalEntryId)                                               extends LedgerError
+  final case class AlreadyReversed(id: JournalEntryId, reversal: JournalEntryId)                   extends LedgerError
+  final case class DuplicatePosting(source: JournalSource, sourceId: UUID)                         extends LedgerError
+  final case class InvalidPeriod(from: LocalDate, to: LocalDate)                                   extends LedgerError
   // catalog
-  final case class DuplicateCode(kind: String, code: String)                        extends LedgerError
-  final case class UnknownContact(id: ContactId)                                    extends LedgerError
-  final case class InactiveContact(id: ContactId)                                   extends LedgerError
-  final case class ContactKindMismatch(id: ContactId, expected: String)             extends LedgerError
-  final case class UnknownTaxRate(id: TaxRateId)                                    extends LedgerError
-  final case class InactiveTaxRate(code: TaxCode)                                   extends LedgerError
-  final case class UnknownItem(id: ItemId)                                          extends LedgerError
-  final case class InactiveItem(sku: Sku)                                           extends LedgerError
-  final case class NotAnInventoryItem(sku: Sku)                                     extends LedgerError
-  final case class WrongAccountType(code: AccountCode, expected: String)            extends LedgerError
+  final case class DuplicateCode(kind: String, code: String)             extends LedgerError
+  final case class UnknownContact(id: ContactId)                         extends LedgerError
+  final case class InactiveContact(id: ContactId)                        extends LedgerError
+  final case class ContactKindMismatch(id: ContactId, expected: String)  extends LedgerError
+  final case class UnknownTaxRate(id: TaxRateId)                         extends LedgerError
+  final case class InactiveTaxRate(code: TaxCode)                        extends LedgerError
+  final case class UnknownItem(id: ItemId)                               extends LedgerError
+  final case class InactiveItem(sku: Sku)                                extends LedgerError
+  final case class NotAnInventoryItem(sku: Sku)                          extends LedgerError
+  final case class WrongAccountType(code: AccountCode, expected: String) extends LedgerError
   // documents & settlements
-  case object NoLines                                                               extends LedgerError
-  case object ZeroTotal                                                             extends LedgerError
-  final case class LineAccountRequired(lineNo: Int)                                 extends LedgerError
-  final case class LinePriceRequired(lineNo: Int)                                   extends LedgerError
-  final case class DueBeforeIssue(date: LocalDate, dueDate: LocalDate)              extends LedgerError
-  final case class InsufficientStock(sku: Sku, onHand: BigDecimal, requested: BigDecimal) extends LedgerError
-  final case class StockAlreadyConsumed(sku: Sku, onHand: BigDecimal, received: BigDecimal) extends LedgerError
-  final case class DocumentNotFound(id: DocumentId)                                 extends LedgerError
-  final case class SettlementNotFound(id: SettlementId)                             extends LedgerError
-  final case class AlreadyVoided(on: LocalDate)                                     extends LedgerError
-  case object DocumentHasPayments                                                   extends LedgerError
-  final case class VoidBeforeIssue(issued: LocalDate, voided: LocalDate)            extends LedgerError
-  final case class AllocationMismatch(documentId: DocumentId, reason: String)       extends LedgerError
+  case object NoLines                                                                            extends LedgerError
+  case object ZeroTotal                                                                          extends LedgerError
+  final case class LineAccountRequired(lineNo: Int)                                              extends LedgerError
+  final case class LinePriceRequired(lineNo: Int)                                                extends LedgerError
+  final case class DueBeforeIssue(date: LocalDate, dueDate: LocalDate)                           extends LedgerError
+  final case class InsufficientStock(sku: Sku, onHand: BigDecimal, requested: BigDecimal)        extends LedgerError
+  final case class StockAlreadyConsumed(sku: Sku, onHand: BigDecimal, received: BigDecimal)      extends LedgerError
+  final case class DocumentNotFound(id: DocumentId)                                              extends LedgerError
+  final case class SettlementNotFound(id: SettlementId)                                          extends LedgerError
+  final case class AlreadyVoided(on: LocalDate)                                                  extends LedgerError
+  case object DocumentHasPayments                                                                extends LedgerError
+  final case class VoidBeforeIssue(issued: LocalDate, voided: LocalDate)                         extends LedgerError
+  final case class AllocationMismatch(documentId: DocumentId, reason: String)                    extends LedgerError
   final case class OverAllocation(documentId: DocumentId, openMinor: Long, requestedMinor: Long) extends LedgerError
   // banking
-  final case class BankTransactionNotFound(id: BankTransactionId)                  extends LedgerError
-  final case class InvalidTransactionState(status: String, action: String)          extends LedgerError
-  final case class InvalidRule(reason: String)                                      extends LedgerError
+  final case class BankTransactionNotFound(id: BankTransactionId)          extends LedgerError
+  final case class InvalidTransactionState(status: String, action: String) extends LedgerError
+  final case class InvalidRule(reason: String)                             extends LedgerError
   // drafts, recurring documents, cash and reconciliation
-  final case class DraftNotFound(id: DraftId)                                      extends LedgerError
-  final case class RecurringNotFound(id: RecurringId)                              extends LedgerError
-  final case class InvalidDraft(reason: String)                                    extends LedgerError
-  final case class ReconciliationNotFound(id: ReconciliationId)                    extends LedgerError
-  case object ReconciliationClosed                                                 extends LedgerError
-  final case class ReconciliationUnbalanced(differenceMinor: Long)                  extends LedgerError
-  final case class LineNotOnAccount(entryId: JournalEntryId, lineNo: Int)           extends LedgerError
+  final case class DraftNotFound(id: DraftId)                             extends LedgerError
+  final case class RecurringNotFound(id: RecurringId)                     extends LedgerError
+  final case class InvalidDraft(reason: String)                           extends LedgerError
+  final case class ReconciliationNotFound(id: ReconciliationId)           extends LedgerError
+  case object ReconciliationClosed                                        extends LedgerError
+  final case class ReconciliationUnbalanced(differenceMinor: Long)        extends LedgerError
+  final case class LineNotOnAccount(entryId: JournalEntryId, lineNo: Int) extends LedgerError
 }
 
 // ---------- Rules ----------
@@ -252,11 +252,11 @@ object Ledger {
     val credit = total(lines, Side.Credit)
 
     def check(l: JournalLine): Option[LedgerError] = accounts.get(l.accountId) match {
-      case None                                     => Some(LedgerError.UnknownAccount(l.accountId))
-      case Some(a) if !a.active && !allowInactive   => Some(LedgerError.InactiveAccount(a.code))
+      case None                                                                 => Some(LedgerError.UnknownAccount(l.accountId))
+      case Some(a) if !a.active && !allowInactive                               => Some(LedgerError.InactiveAccount(a.code))
       case Some(a) if a.currency != baseCurrency && a.currency != entryCurrency =>
         Some(LedgerError.CurrencyMismatch(a.code, a.currency, entryCurrency))
-      case Some(_)                                  => None
+      case Some(_) => None
     }
 
     if (lines.sizeIs < 2) Left(LedgerError.TooFewLines)
@@ -276,8 +276,7 @@ object Ledger {
       .map(_ => JournalEntry(header, toBase(lines, header.exchangeRate)))
 
   /** `round(minor * rate)`, half-even. */
-  def convert(minor: Long, rate: ExchangeRate): Long =
-    (BigDecimal(minor) * rate.value).setScale(0, RoundingMode.HALF_EVEN).toLongExact
+  def convert(minor: Long, rate: ExchangeRate): Long = (BigDecimal(minor) * rate.value).setScale(0, RoundingMode.HALF_EVEN).toLongExact
 
   /**
    * Converts each line to base currency. Lines are rounded half-even, then

@@ -14,11 +14,11 @@ class PerformanceSuite extends munit.FunSuite {
   test("time-weighted return ignores contributions") {
     // +10%, then a 100 deposit, then +10% on the new base
     val series = List(day(0, 100), day(1, 110), day(2, 210, flow = 100), day(3, 231))
-    val r = Performance.measure(series).get
+    val r      = Performance.measure(series).get
     close(r.twr, 0.21)
     assertEquals(r.netFlows, BigDecimal(100))
     assertEquals(r.gain, BigDecimal(31))
-    assertEquals(r.twrAnnualized, None)                      // under 30 days
+    assertEquals(r.twrAnnualized, None) // under 30 days
   }
 
   test("a deposit into an empty account is not a return") {

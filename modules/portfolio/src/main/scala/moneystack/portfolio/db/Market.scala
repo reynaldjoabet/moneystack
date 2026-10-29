@@ -25,8 +25,10 @@ trait Market[F[_]] {
 
 object Market {
 
-  import Codecs.{asset as assetC, assetId as assetIdC, classification as classC, fxRate as fxC, quote as quoteC,
-                 symbol as symbolC, taxonomy as taxonomyC}
+  import Codecs.{
+    asset as assetC, assetId as assetIdC, classification as classC, fxRate as fxC, quote as quoteC,
+    symbol as symbolC, taxonomy as taxonomyC
+  }
 
   def make[F[_]: Concurrent](pool: Resource[F, Session[F]]): Market[F] = new Market[F] {
 

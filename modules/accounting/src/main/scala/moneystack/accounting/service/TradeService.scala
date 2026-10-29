@@ -23,7 +23,14 @@ import java.util.UUID
 trait TradeService[F[_]] {
   def createDocument(kind: DocumentKind, b: TradeService.NewDocument, by: UserId): F[Either[LedgerError, DocumentDetails]]
   def document(id: DocumentId): F[Option[DocumentDetails]]
-  def documents(kind: DocumentKind, from: LocalDate, to: LocalDate, contact: Option[ContactId], limit: Int): F[List[TradeService.DocumentSummary]]
+  def documents(
+      kind: DocumentKind,
+      from: LocalDate,
+      to: LocalDate,
+      contact: Option[ContactId],
+      limit: Int
+  ): F[List[TradeService.DocumentSummary]]
+
   /** Reverses an unpaid document's postings and stock movements. */
   def voidDocument(id: DocumentId, date: LocalDate, by: UserId): F[Either[LedgerError, DocumentDetails]]
 
@@ -117,37 +124,47 @@ object TradeService {
     lines.zipWithIndex.traverse { case (l, i) =>
       val no = i + 1
       for {
-        item    <- l.itemId.traverse(id =>
-                     items.get(id).toRight(LedgerError.UnknownItem(id)).flatMap(it => Either.cond(it.active, it, LedgerError.InactiveItem(it.sku)))
-                   )
+        item <- l.itemId.traverse(id =>
+          items.get(id).toRight(LedgerError.UnknownItem(id)).flatMap(it => Either.cond(it.active, it, LedgerError.InactiveItem(it.sku)))
+        )
         account <- item match {
-                     case Some(it) if it.kind == ItemKind.Inventory =>
-                       Right(if (kind == DocumentKind.Invoice) it.incomeAccountId else it.inventoryAccountId.getOrElse(SystemAccounts.Inventory.id))
-                     case Some(it) =>
-                       Right(l.accountId.getOrElse(if (kind == DocumentKind.Invoice) it.incomeAccountId else it.expenseAccountId))
-                     case None =>
-                       l.accountId.toRight(LedgerError.LineAccountRequired(no))
-                   }
-        price   <- l.unitPriceMinor
-                     .orElse(item.flatMap(it => if (kind == DocumentKind.Invoice) it.sellPriceMinor else it.costPriceMinor))
-                     .toRight(LedgerError.LinePriceRequired(no))
-        rate    <- l.taxRateId.traverse(id =>
-                     rates.get(id).toRight(LedgerError.UnknownTaxRate(id)).flatMap(r => Either.cond(r.active, r, LedgerError.InactiveTaxRate(r.code)))
-                   )
+          case Some(it) if it.kind == ItemKind.Inventory =>
+            Right(if (kind == DocumentKind.Invoice) it.incomeAccountId else it.inventoryAccountId.getOrElse(SystemAccounts.Inventory.id))
+          case Some(it) =>
+            Right(l.accountId.getOrElse(if (kind == DocumentKind.Invoice) it.incomeAccountId else it.expenseAccountId))
+          case None =>
+            l.accountId.toRight(LedgerError.LineAccountRequired(no))
+        }
+        price <- l.unitPriceMinor
+          .orElse(item.flatMap(it => if (kind == DocumentKind.Invoice) it.sellPriceMinor else it.costPriceMinor))
+          .toRight(LedgerError.LinePriceRequired(no))
+        rate <- l.taxRateId.traverse(id =>
+          rates.get(id).toRight(LedgerError.UnknownTaxRate(id)).flatMap(r => Either.cond(r.active, r, LedgerError.InactiveTaxRate(r.code)))
+        )
       } yield {
         val amount = Trade.lineAmount(l.quantity.value, price.value)
         val tax    = Trade.lineTax(amount, rate.map(_.rateBps))
-        DocumentLine(no, l.itemId, l.description, l.quantity, price, account, l.taxRateId, rate.map(_.rateBps),
-                     AmountMinor.assume(amount), AmountMinor.assume(tax))
+        DocumentLine(
+          no,
+          l.itemId,
+          l.description,
+          l.quantity,
+          price,
+          account,
+          l.taxRateId,
+          rate.map(_.rateBps),
+          AmountMinor.assume(amount),
+          AmountMinor.assume(tax)
+        )
       }
     }
 
   private def contactFor(c: Option[Contact], id: ContactId, kind: ContactKind): Either[LedgerError, Contact] =
     c match {
-      case None                       => Left(LedgerError.UnknownContact(id))
-      case Some(x) if x.kind != kind  => Left(LedgerError.ContactKindMismatch(id, kind.key))
-      case Some(x) if !x.active       => Left(LedgerError.InactiveContact(id))
-      case Some(x)                    => Right(x)
+      case None                      => Left(LedgerError.UnknownContact(id))
+      case Some(x) if x.kind != kind => Left(LedgerError.ContactKindMismatch(id, kind.key))
+      case Some(x) if !x.active      => Left(LedgerError.InactiveContact(id))
+      case Some(x)                   => Right(x)
     }
 
   def make[F[_]: Async](
@@ -163,10 +180,10 @@ object TradeService {
   ): TradeService[F] = new TradeService[F] {
 
     private type R[A] = EitherT[F, LedgerError, A]
-    private def lift[A](fa: F[A]): R[A]                     = EitherT.liftF(fa)
-    private def fail[A](err: LedgerError): R[A]             = EitherT.leftT[F, A](err)
+    private def lift[A](fa: F[A]): R[A]                          = EitherT.liftF(fa)
+    private def fail[A](err: LedgerError): R[A]                  = EitherT.leftT[F, A](err)
     private def check(ok: Boolean, err: => LedgerError): R[Unit] = EitherT.cond[F](ok, (), err)
-    private val unit: R[Unit]                               = EitherT.rightT[F, LedgerError](())
+    private val unit: R[Unit]                                    = EitherT.rightT[F, LedgerError](())
 
     private val base = posting.baseCurrency
 
@@ -175,8 +192,8 @@ object TradeService {
     def createDocument(kind: DocumentKind, b: NewDocument, by: UserId): F[Either[LedgerError, DocumentDetails]] =
       (contactRepo.find(b.contactId), itemRepo.list(), taxRateRepo.list(), posting.chart).tupled.flatMap {
         case (contact, itemList, rateList, chart) =>
-          val itemMap = itemList.map(i => i.id -> i).toMap
-          val due     = b.dueDate.getOrElse(b.date.plusDays(30))
+          val itemMap  = itemList.map(i => i.id -> i).toMap
+          val due      = b.dueDate.getOrElse(b.date.plusDays(30))
           val prepared = for {
             c     <- contactFor(contact, b.contactId, kind.contactKind)
             _     <- Either.cond(b.lines.nonEmpty, (), LedgerError.NoLines)
@@ -212,16 +229,41 @@ object TradeService {
       val subtotal = lines.map(_.amountMinor.value: Long).sum
       val tax      = lines.map(_.taxMinor.value: Long).sum
       for {
-        n      <- lift(documentRepo.nextNumber(s, kind.key))
-        number  = f"${kind.prefix}-$n%06d"
-        header <- lift(posting.header(b.date, JournalRef.option(number), b.memo, c.currency, rate,
-                                      kind.documentSource, Some(id.value), Some(by)))
-        entry  <- posting.postIn(s, header, Trade.postingLines(kind, c.id, lines, controlAccount(kind), taxAccount(kind)), chart)
-        doc     = Document(id, kind, number, c.id, b.date, due, c.currency, rate, b.reference, b.memo,
-                           AmountMinor.assume(subtotal), AmountMinor.assume(tax), PriceMinor.assume(subtotal + tax),
-                           entry.lines.head.baseAmountMinor, entry.header.id, None, Some(by), now)
-        _      <- lift(documentRepo.insert(s, doc, lines))
-        _      <- moveStock(s, doc, lines, entry, itemMap, chart, by)
+        n <- lift(documentRepo.nextNumber(s, kind.key))
+        number = f"${kind.prefix}-$n%06d"
+        header <- lift(posting.header(
+          b.date,
+          JournalRef.option(number),
+          b.memo,
+          c.currency,
+          rate,
+          kind.documentSource,
+          Some(id.value),
+          Some(by)
+        ))
+        entry <- posting.postIn(s, header, Trade.postingLines(kind, c.id, lines, controlAccount(kind), taxAccount(kind)), chart)
+        doc = Document(
+          id,
+          kind,
+          number,
+          c.id,
+          b.date,
+          due,
+          c.currency,
+          rate,
+          b.reference,
+          b.memo,
+          AmountMinor.assume(subtotal),
+          AmountMinor.assume(tax),
+          PriceMinor.assume(subtotal + tax),
+          entry.lines.head.baseAmountMinor,
+          entry.header.id,
+          None,
+          Some(by),
+          now
+        )
+        _ <- lift(documentRepo.insert(s, doc, lines))
+        _ <- moveStock(s, doc, lines, entry, itemMap, chart, by)
       } yield DocumentDetails(doc, lines, AmountMinor.assume(0L), DocumentStatus.Open)
     }
 
@@ -251,24 +293,32 @@ object TradeService {
           case DocumentKind.Invoice =>
             for {
               issued <- stocked.foldLeftM((stocks, List.empty[(Item, Long)])) { case ((st, acc), (l, it)) =>
-                          val stock = st(it.id)
-                          val qty   = l.quantity.value
-                          if (stock.quantity < qty) fail(LedgerError.InsufficientStock(it.sku, stock.quantity, qty))
-                          else {
-                            val cost  = stock.costOf(qty)
-                            val after = stock.add(-qty, -cost)
-                            lift(itemRepo.move(s, InventoryMove(it.id, doc.date, -qty, -cost, JournalSource.InventoryIssue, doc.id.value), after))
-                              .as((st.updated(it.id, after), acc :+ (it -> cost)))
-                          }
-                        }
-              cogs    = issued._2.flatMap { case (it, cost) =>
-                          Ledger.line(it.expenseAccountId, Side.Debit, cost, None).toList ++
-                            Ledger.line(it.inventoryAccountId.getOrElse(SystemAccounts.Inventory.id), Side.Credit, cost, None).toList
-                        }
-              _      <- if (cogs.isEmpty) unit
-                        else lift(posting.header(doc.date, JournalRef.option(doc.number), None, base, ExchangeRate.One,
-                                                 JournalSource.InventoryIssue, Some(doc.id.value), Some(by)))
-                               .flatMap(h => posting.postIn(s, h, cogs, chart)).void
+                val stock = st(it.id)
+                val qty   = l.quantity.value
+                if (stock.quantity < qty) fail(LedgerError.InsufficientStock(it.sku, stock.quantity, qty))
+                else {
+                  val cost  = stock.costOf(qty)
+                  val after = stock.add(-qty, -cost)
+                  lift(itemRepo.move(s, InventoryMove(it.id, doc.date, -qty, -cost, JournalSource.InventoryIssue, doc.id.value), after))
+                    .as((st.updated(it.id, after), acc :+ (it -> cost)))
+                }
+              }
+              cogs = issued._2.flatMap { case (it, cost) =>
+                Ledger.line(it.expenseAccountId, Side.Debit, cost, None).toList ++
+                  Ledger.line(it.inventoryAccountId.getOrElse(SystemAccounts.Inventory.id), Side.Credit, cost, None).toList
+              }
+              _ <- if (cogs.isEmpty) unit
+              else lift(posting.header(
+                doc.date,
+                JournalRef.option(doc.number),
+                None,
+                base,
+                ExchangeRate.One,
+                JournalSource.InventoryIssue,
+                Some(doc.id.value),
+                Some(by)
+              ))
+                .flatMap(h => posting.postIn(s, h, cogs, chart)).void
             } yield ()
         }
       }
@@ -290,27 +340,30 @@ object TradeService {
       (posting.chart, itemRepo.list()).tupled.flatMap { case (chart, itemList) =>
         db.txE { s =>
           for {
-            doc   <- EitherT.fromOptionF(documentRepo.findForUpdate(s, id), LedgerError.DocumentNotFound(id): LedgerError)
-            _     <- doc.voidedOn.fold(unit)(on => fail(LedgerError.AlreadyVoided(on)))
-            _     <- check(!date.isBefore(doc.date), LedgerError.VoidBeforeIssue(doc.date, date))
-            paid  <- lift(documentRepo.paidIn(s, id))
-            _     <- check(paid._1 == 0L, LedgerError.DocumentHasPayments)
-            _     <- posting.reverseIn(s, doc.entryId, date, Some(by), chart)
-            _     <- doc.kind match {
-                       case DocumentKind.Invoice =>
-                         for {
-                           cogs <- lift(journals.bySourceIn(s, JournalSource.InventoryIssue, doc.id.value))
-                           _    <- cogs.traverse_(e => posting.reverseIn(s, e, date, Some(by), chart))
-                           _    <- restock(s, doc, JournalSource.InventoryIssue, date, itemList)
-                         } yield ()
-                       case DocumentKind.Bill =>
-                         restock(s, doc, JournalSource.Bill, date, itemList)
-                     }
+            doc  <- EitherT.fromOptionF(documentRepo.findForUpdate(s, id), LedgerError.DocumentNotFound(id): LedgerError)
+            _    <- doc.voidedOn.fold(unit)(on => fail(LedgerError.AlreadyVoided(on)))
+            _    <- check(!date.isBefore(doc.date), LedgerError.VoidBeforeIssue(doc.date, date))
+            paid <- lift(documentRepo.paidIn(s, id))
+            _    <- check(paid._1 == 0L, LedgerError.DocumentHasPayments)
+            _    <- posting.reverseIn(s, doc.entryId, date, Some(by), chart)
+            _    <- doc.kind match {
+              case DocumentKind.Invoice =>
+                for {
+                  cogs <- lift(journals.bySourceIn(s, JournalSource.InventoryIssue, doc.id.value))
+                  _    <- cogs.traverse_(e => posting.reverseIn(s, e, date, Some(by), chart))
+                  _    <- restock(s, doc, JournalSource.InventoryIssue, date, itemList)
+                } yield ()
+              case DocumentKind.Bill =>
+                restock(s, doc, JournalSource.Bill, date, itemList)
+            }
             _     <- lift(documentRepo.markVoided(s, id, date))
             lines <- lift(documentRepo.linesIn(s, id))
           } yield DocumentDetails(doc.copy(voidedOn = Some(date)), lines, AmountMinor.assume(0L), DocumentStatus.Void)
-        }.flatTap(_.traverse_(_ => Async[F].delay(Instant.now()).flatMap(now =>
-          office.addEvent(DocumentEvent(id, DocumentEventKind.Voided, Body.option(s"voided on $date"), Some(by), now)))))
+        }.flatTap(_.traverse_(_ =>
+          Async[F].delay(Instant.now()).flatMap(now =>
+            office.addEvent(DocumentEvent(id, DocumentEventKind.Voided, Body.option(s"voided on $date"), Some(by), now))
+          )
+        ))
       }
 
     /** Undoes the stock moves `doc` made. A bill's stock must still be on hand at its received value. */
@@ -335,7 +388,7 @@ object TradeService {
 
     def settle(kind: DocumentKind, b: NewSettlement, by: UserId): F[Either[LedgerError, SettlementDetails]] =
       (contactRepo.find(b.contactId), posting.chart).tupled.flatMap { case (contact, chart) =>
-        val ids = b.allocations.map(_.documentId)
+        val ids      = b.allocations.map(_.documentId)
         val prepared = for {
           c    <- contactFor(contact, b.contactId, kind.contactKind)
           _    <- Either.cond(b.allocations.nonEmpty, (), LedgerError.NoLines)
@@ -350,8 +403,15 @@ object TradeService {
           id      <- lift(Async[F].delay(SettlementId.assume(UUID.randomUUID())))
           now     <- lift(Async[F].delay(Instant.now()))
           details <- EitherT(db.txE(s => record(s, kind, id, c, b, rate, chart, by, now)))
-          _       <- lift(details.allocations.traverse_(a => office.addEvent(DocumentEvent(a.documentId, DocumentEventKind.Payment,
-                       Body.option(s"${details.settlement.number}: ${a.amountMinor.value}"), Some(by), now))))
+          _       <- lift(details.allocations.traverse_(a =>
+            office.addEvent(DocumentEvent(
+              a.documentId,
+              DocumentEventKind.Payment,
+              Body.option(s"${details.settlement.number}: ${a.amountMinor.value}"),
+              Some(by),
+              now
+            ))
+          ))
         } yield details).value
       }
 
@@ -369,24 +429,68 @@ object TradeService {
       for {
         allocs <- b.allocations.sortBy(_.documentId.value).traverse(a => allocate(s, kind, c, b.date, a))
         n      <- lift(documentRepo.nextNumber(s, settlementSeries(kind)))
-        number  = f"${kind.settlementPrefix}-$n%06d"
-        total   = allocs.map(_.amountMinor.value: Long).sum
-        header <- lift(posting.header(b.date, JournalRef.option(number), b.memo, c.currency, rate,
-                                      kind.settlementSource, Some(id.value), Some(by)))
-        lines   = JournalLine(b.accountId, kind.controlSide, PriceMinor.assume(total), None) ::
-                    allocs.map(a => JournalLine(controlAccount(kind), kind.controlSide.opposite, a.amountMinor, Some(c.id)))
-        entry  <- posting.postIn(s, header, lines, chart)
-        booked  = allocs.zip(entry.lines.drop(1)).map { case (a, p) => a.copy(baseMinor = p.baseAmountMinor) }
-        diff    = booked.map(a => a.baseMinor.value - a.documentBaseMinor.value).sum
-        fx     <- if (diff == 0L) EitherT.rightT[F, LedgerError](Option.empty[JournalEntryId])
-                  else lift(posting.header(b.date, JournalRef.option(number), None, base, ExchangeRate.One,
-                                           JournalSource.FxRealized, Some(id.value), Some(by)))
-                         .flatMap(h => posting.postIn(s, h, Trade.fxLines(kind, c.id, diff, controlAccount(kind),
-                                                                          SystemAccounts.ExchangeGainLoss.id), chart))
-                         .map(e => Some(e.header.id))
-        st      = Settlement(id, kind, number, c.id, b.date, c.currency, rate, b.accountId, b.reference, b.memo,
-                             PriceMinor.assume(total), entry.header.id, fx, None, Some(by), now)
-        _      <- lift(settlementRepo.insert(s, st, booked))
+        number = f"${kind.settlementPrefix}-$n%06d"
+        total  = allocs.map(_.amountMinor.value: Long).sum
+        header <- lift(posting.header(
+          b.date,
+          JournalRef.option(number),
+          b.memo,
+          c.currency,
+          rate,
+          kind.settlementSource,
+          Some(id.value),
+          Some(by)
+        ))
+        lines = JournalLine(b.accountId, kind.controlSide, PriceMinor.assume(total), None) ::
+          allocs.map(a => JournalLine(controlAccount(kind), kind.controlSide.opposite, a.amountMinor, Some(c.id)))
+        entry <- posting.postIn(s, header, lines, chart)
+        booked = allocs.zip(entry.lines.drop(1)).map { case (a, p) => a.copy(baseMinor = p.baseAmountMinor) }
+        diff   = booked.map(a => a.baseMinor.value - a.documentBaseMinor.value).sum
+        fx <- if (diff == 0L) EitherT.rightT[F, LedgerError](Option.empty[JournalEntryId])
+        else lift(posting.header(
+          b.date,
+          JournalRef.option(number),
+          None,
+          base,
+          ExchangeRate.One,
+          JournalSource.FxRealized,
+          Some(id.value),
+          Some(by)
+        ))
+          .flatMap(h =>
+            posting.postIn(
+              s,
+              h,
+              Trade.fxLines(
+                kind,
+                c.id,
+                diff,
+                controlAccount(kind),
+                SystemAccounts.ExchangeGainLoss.id
+              ),
+              chart
+            )
+          )
+          .map(e => Some(e.header.id))
+        st = Settlement(
+          id,
+          kind,
+          number,
+          c.id,
+          b.date,
+          c.currency,
+          rate,
+          b.accountId,
+          b.reference,
+          b.memo,
+          PriceMinor.assume(total),
+          entry.header.id,
+          fx,
+          None,
+          Some(by),
+          now
+        )
+        _ <- lift(settlementRepo.insert(s, st, booked))
       } yield SettlementDetails(st, booked)
 
     /** Locks the document and checks the allocation fits; the base at settlement rate is filled in after posting. */
@@ -397,10 +501,14 @@ object TradeService {
         _    <- check(d.voidedOn.isEmpty, LedgerError.AllocationMismatch(d.id, "document is void"))
         _    <- check(!date.isBefore(d.date), LedgerError.AllocationMismatch(d.id, "settlement predates the document"))
         paid <- lift(documentRepo.paidIn(s, d.id))
-        open  = d.totalMinor.value - paid._1
-        _    <- check(a.amountMinor.value <= open, LedgerError.OverAllocation(d.id, open, a.amountMinor.value))
-      } yield Allocation(d.id, a.amountMinor, AmountMinor.assume(0L),
-                         AmountMinor.assume(Trade.documentBase(d, paid._1, paid._2, a.amountMinor.value)))
+        open = d.totalMinor.value - paid._1
+        _ <- check(a.amountMinor.value <= open, LedgerError.OverAllocation(d.id, open, a.amountMinor.value))
+      } yield Allocation(
+        d.id,
+        a.amountMinor,
+        AmountMinor.assume(0L),
+        AmountMinor.assume(Trade.documentBase(d, paid._1, paid._2, a.amountMinor.value))
+      )
 
     def settlement(id: SettlementId): F[Option[SettlementDetails]] = settlementRepo.find(id)
 
@@ -412,12 +520,12 @@ object TradeService {
         db.txE { s =>
           for {
             sd <- EitherT.fromOptionF(settlementRepo.findForUpdate(s, id), LedgerError.SettlementNotFound(id): LedgerError)
-            st  = sd.settlement
-            _  <- st.voidedOn.fold(unit)(on => fail(LedgerError.AlreadyVoided(on)))
-            _  <- check(!date.isBefore(st.date), LedgerError.VoidBeforeIssue(st.date, date))
-            _  <- posting.reverseIn(s, st.entryId, date, Some(by), chart)
-            _  <- st.fxEntryId.traverse_(e => posting.reverseIn(s, e, date, Some(by), chart))
-            _  <- lift(settlementRepo.markVoided(s, id, date))
+            st = sd.settlement
+            _ <- st.voidedOn.fold(unit)(on => fail(LedgerError.AlreadyVoided(on)))
+            _ <- check(!date.isBefore(st.date), LedgerError.VoidBeforeIssue(st.date, date))
+            _ <- posting.reverseIn(s, st.entryId, date, Some(by), chart)
+            _ <- st.fxEntryId.traverse_(e => posting.reverseIn(s, e, date, Some(by), chart))
+            _ <- lift(settlementRepo.markVoided(s, id, date))
           } yield sd.copy(settlement = st.copy(voidedOn = Some(date)))
         }
       }
@@ -451,25 +559,36 @@ object TradeService {
         now: Instant
     ): R[InventoryAdjustment] =
       for {
-        stock  <- lift(itemRepo.lockStock(s, List(it.id))).map(_(it.id))
-        value  <- if (b.quantity > 0)
-                    EitherT.fromEither[F](
-                      b.valueMinor.map(v => v.value: Long)
-                        .orElse(it.costPriceMinor.map(c => Trade.lineAmount(b.quantity, c.value)))
-                        .toRight(LedgerError.LinePriceRequired(1): LedgerError)
-                    )
-                  else if (stock.quantity < -b.quantity) fail(LedgerError.InsufficientStock(it.sku, stock.quantity, -b.quantity))
-                  else EitherT.rightT[F, LedgerError](-stock.costOf(-b.quantity))
-        offset  = b.accountId.getOrElse(SystemAccounts.InventoryAdjustments.id)
-        lines   = Ledger.line(it.inventoryAccountId.getOrElse(SystemAccounts.Inventory.id), Side.Debit, value, None).toList ++
-                    Ledger.line(offset, Side.Credit, value, None).toList
-        header <- lift(posting.header(b.date, None, Some(b.reason), base, ExchangeRate.One,
-                                      JournalSource.InventoryAdjustment, Some(id.value), Some(by)))
-        entry  <- posting.postIn(s, header, lines, chart)
-        _      <- lift(itemRepo.move(s, InventoryMove(it.id, b.date, b.quantity, value, JournalSource.InventoryAdjustment, id.value),
-                                     stock.add(b.quantity, value)))
-        adj     = InventoryAdjustment(id, it.id, b.date, b.quantity, value, offset, b.reason, entry.header.id, Some(by), now)
-        _      <- lift(itemRepo.insertAdjustment(s, adj))
+        stock <- lift(itemRepo.lockStock(s, List(it.id))).map(_(it.id))
+        value <- if (b.quantity > 0)
+          EitherT.fromEither[F](
+            b.valueMinor.map(v => v.value: Long)
+              .orElse(it.costPriceMinor.map(c => Trade.lineAmount(b.quantity, c.value)))
+              .toRight(LedgerError.LinePriceRequired(1): LedgerError)
+          )
+        else if (stock.quantity < -b.quantity) fail(LedgerError.InsufficientStock(it.sku, stock.quantity, -b.quantity))
+        else EitherT.rightT[F, LedgerError](-stock.costOf(-b.quantity))
+        offset = b.accountId.getOrElse(SystemAccounts.InventoryAdjustments.id)
+        lines  = Ledger.line(it.inventoryAccountId.getOrElse(SystemAccounts.Inventory.id), Side.Debit, value, None).toList ++
+          Ledger.line(offset, Side.Credit, value, None).toList
+        header <- lift(posting.header(
+          b.date,
+          None,
+          Some(b.reason),
+          base,
+          ExchangeRate.One,
+          JournalSource.InventoryAdjustment,
+          Some(id.value),
+          Some(by)
+        ))
+        entry <- posting.postIn(s, header, lines, chart)
+        _     <- lift(itemRepo.move(
+          s,
+          InventoryMove(it.id, b.date, b.quantity, value, JournalSource.InventoryAdjustment, id.value),
+          stock.add(b.quantity, value)
+        ))
+        adj = InventoryAdjustment(id, it.id, b.date, b.quantity, value, offset, b.reason, entry.header.id, Some(by), now)
+        _ <- lift(itemRepo.insertAdjustment(s, adj))
       } yield adj
 
     def adjustments(limit: Int): F[List[InventoryAdjustment]] = itemRepo.adjustments(limit)

@@ -11,8 +11,21 @@ class BankRulesSuite extends munit.FunSuite {
   private val expense = AccountId.assume(UUID.randomUUID())
 
   private def tx(description: String, amount: Long): BankTransaction =
-    BankTransaction(BankTransactionId.assume(UUID.randomUUID()), bank, LocalDate.of(2026, 3, 1), Title.applyUnsafe(description),
-                    amount, None, BankTxStatus.Uncategorized, None, None, None, None, None, Instant.EPOCH)
+    BankTransaction(
+      BankTransactionId.assume(UUID.randomUUID()),
+      bank,
+      LocalDate.of(2026, 3, 1),
+      Title.applyUnsafe(description),
+      amount,
+      None,
+      BankTxStatus.Uncategorized,
+      None,
+      None,
+      None,
+      None,
+      None,
+      Instant.EPOCH
+    )
 
   private def rule(
       conditions: List[RuleCondition],
@@ -22,8 +35,19 @@ class BankRulesSuite extends munit.FunSuite {
       active: Boolean = true,
       createdAt: Instant = Instant.EPOCH
   ): BankRule =
-    BankRule(BankRuleId.assume(UUID.randomUUID()), Title.applyUnsafe("rule"), priority, applyTo, conjunction, conditions,
-             expense, None, autoCategorize = true, active, createdAt)
+    BankRule(
+      BankRuleId.assume(UUID.randomUUID()),
+      Title.applyUnsafe("rule"),
+      priority,
+      applyTo,
+      conjunction,
+      conditions,
+      expense,
+      None,
+      autoCategorize = true,
+      active,
+      createdAt
+    )
 
   private def cond(field: RuleField, op: RuleOperator, value: String) = RuleCondition(field, op, value)
 
@@ -33,8 +57,13 @@ class BankRulesSuite extends munit.FunSuite {
     assert(BankRules.validate(List(cond(RuleField.Amount, RuleOperator.Contains, "10"))).isLeft)
     assert(BankRules.validate(List(cond(RuleField.Amount, RuleOperator.GreaterThan, "ten"))).isLeft)
     assert(BankRules.validate(List(cond(RuleField.Description, RuleOperator.LessThan, "x"))).isLeft)
-    assertEquals(BankRules.validate(List(cond(RuleField.Amount, RuleOperator.GreaterThan, "1000"),
-                                         cond(RuleField.Description, RuleOperator.StartsWith, "AWS"))), Right(()))
+    assertEquals(
+      BankRules.validate(List(
+        cond(RuleField.Amount, RuleOperator.GreaterThan, "1000"),
+        cond(RuleField.Description, RuleOperator.StartsWith, "AWS")
+      )),
+      Right(())
+    )
   }
 
   test("description matching is case-insensitive") {

@@ -47,13 +47,11 @@ object Codecs {
   val frequency: Codec[Frequency]           = CoreCodecs.enumOf(8, Frequency.parse, Frequency.render)
   val objectiveKind: Codec[ObjectiveKind]   = CoreCodecs.enumOf(8, ObjectiveKind.parse, ObjectiveKind.render)
 
-  val wallet: Codec[Wallet] =
-    (walletId *: userId *: title *: walletKind *: currency *: int8 *: bool *: instant).to[Wallet]
+  val wallet: Codec[Wallet] = (walletId *: userId *: title *: walletKind *: currency *: int8 *: bool *: instant).to[Wallet]
 
   val share: Codec[WalletShare] = (walletId *: userId *: instant).to[WalletShare]
 
-  val category: Codec[Category] =
-    (categoryId *: userId *: title *: categoryKind *: categoryId.opt *: varchar(16).opt *: bool).to[Category]
+  val category: Codec[Category] = (categoryId *: userId *: title *: categoryKind *: categoryId.opt *: varchar(16).opt *: bool).to[Category]
 
   val payee: Codec[Payee] = (payeeId *: userId *: title *: texts *: categoryId.opt).to[Payee]
 
@@ -65,10 +63,57 @@ object Codecs {
       payeeId.opt *: tagIds *: walletId.opt *: int8.opt *: transactionId.opt *: objectiveId.opt *: scheduleId.opt *: date.opt *:
       budgetIds *: varchar(64).opt *: userId *: instant).imap {
       case (id, owner, wallet, kind, amt, d, t, note, cat, src, payee, tags, to, toAmt, refund, obj, sched, due, excl, key, by, at) =>
-        Transaction(id, owner, wallet, kind, amt, d, t, note, cat, src, payee, tags, Nil, to, toAmt, refund, obj, sched, due, excl, key, by, at)
-    }(t => (t.id, t.ownerId, t.walletId, t.kind, t.amountMinor, t.date, t.title, t.note, t.categoryId, t.categorySource, t.payeeId,
-            t.tags, t.toWalletId, t.toAmountMinor, t.refundOf, t.objectiveId, t.scheduleId, t.dueDate, t.excludedBudgets, t.importKey,
-            t.createdBy, t.createdAt))
+        Transaction(
+          id,
+          owner,
+          wallet,
+          kind,
+          amt,
+          d,
+          t,
+          note,
+          cat,
+          src,
+          payee,
+          tags,
+          Nil,
+          to,
+          toAmt,
+          refund,
+          obj,
+          sched,
+          due,
+          excl,
+          key,
+          by,
+          at
+        )
+    }(t =>
+      (
+        t.id,
+        t.ownerId,
+        t.walletId,
+        t.kind,
+        t.amountMinor,
+        t.date,
+        t.title,
+        t.note,
+        t.categoryId,
+        t.categorySource,
+        t.payeeId,
+        t.tags,
+        t.toWalletId,
+        t.toAmountMinor,
+        t.refundOf,
+        t.objectiveId,
+        t.scheduleId,
+        t.dueDate,
+        t.excludedBudgets,
+        t.importKey,
+        t.createdBy,
+        t.createdAt
+      )
+    )
 
   val split: Codec[Split] = (categoryId *: int8 *: body.opt).to[Split]
 
@@ -78,8 +123,27 @@ object Codecs {
       categoryIds *: bool *: bool *: bool *: bool *: instant).imap {
       case (id, owner, name, amt, ccy, rec, len, start, end, ws, cs, ex, income, roll, pinned, archived, at) =>
         Budget(id, owner, name, amt, ccy, rec, len, start, end, ws, cs, ex, income, roll, Nil, pinned, archived, at)
-    }(b => (b.id, b.ownerId, b.name, b.amountMinor, b.currency, b.recurrence, b.periodLength, b.startDate, b.endDate, b.walletIds,
-            b.categoryIds, b.excludedCategoryIds, b.income, b.rollover, b.pinned, b.archived, b.createdAt))
+    }(b =>
+      (
+        b.id,
+        b.ownerId,
+        b.name,
+        b.amountMinor,
+        b.currency,
+        b.recurrence,
+        b.periodLength,
+        b.startDate,
+        b.endDate,
+        b.walletIds,
+        b.categoryIds,
+        b.excludedCategoryIds,
+        b.income,
+        b.rollover,
+        b.pinned,
+        b.archived,
+        b.createdAt
+      )
+    )
 
   val limit: Codec[CategoryLimit] = (categoryId *: int8).to[CategoryLimit]
 

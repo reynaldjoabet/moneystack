@@ -57,23 +57,23 @@ object Performance {
       first <- series.headOption
       last  <- series.lastOption
     } yield {
-      val daily  = dailyReturns(series).map(_._2)
-      val index  = daily.scanLeft(BigDecimal(1))((acc, r) => acc * (1 + r))
-      val twr    = index.last - 1
-      val days   = ChronoUnit.DAYS.between(first.date, last.date)
-      val flows  = series.drop(1).map(_.flow).sum
+      val daily = dailyReturns(series).map(_._2)
+      val index = daily.scanLeft(BigDecimal(1))((acc, r) => acc * (1 + r))
+      val twr   = index.last - 1
+      val days  = ChronoUnit.DAYS.between(first.date, last.date)
+      val flows = series.drop(1).map(_.flow).sum
       Returns(
-        from          = first.date,
-        to            = last.date,
-        startValue    = first.total,
-        endValue      = last.total,
-        netFlows      = flows,
-        gain          = last.total - first.total - flows,
-        twr           = scale(twr),
+        from = first.date,
+        to = last.date,
+        startValue = first.total,
+        endValue = last.total,
+        netFlows = flows,
+        gain = last.total - first.total - flows,
+        twr = scale(twr),
         twrAnnualized = annualize(twr, days).map(scale),
-        mwr           = xirr(cashFlows(series)).map(scale),
-        volatility    = volatility(daily).map(scale),
-        maxDrawdown   = scale(maxDrawdown(index))
+        mwr = xirr(cashFlows(series)).map(scale),
+        volatility = volatility(daily).map(scale),
+        maxDrawdown = scale(maxDrawdown(index))
       )
     }
 
@@ -85,7 +85,7 @@ object Performance {
   /** The investor's view: paying in is negative, the closing value is a final inflow. */
   def cashFlows(series: List[DailyValue]): List[(LocalDate, BigDecimal)] =
     series match {
-      case Nil => Nil
+      case Nil           => Nil
       case first :: rest =>
         val opening = if (first.total != 0) List(first.date -> -first.total) else Nil
         opening ++ rest.filter(_.flow != 0).map(d => d.date -> -d.flow) ++ List(series.last.date -> series.last.total)
@@ -96,8 +96,8 @@ object Performance {
     val nonZero = flows.filter(_._2 != 0)
     if (nonZero.isEmpty || nonZero.forall(_._2 > 0) || nonZero.forall(_._2 < 0)) None
     else {
-      val t0 = nonZero.map(_._1).min
-      val ts = nonZero.map { case (d, v) => (ChronoUnit.DAYS.between(t0, d).toDouble / DaysPerYear, v.toDouble) }
+      val t0              = nonZero.map(_._1).min
+      val ts              = nonZero.map { case (d, v) => (ChronoUnit.DAYS.between(t0, d).toDouble / DaysPerYear, v.toDouble) }
       def npv(r: Double)  = ts.map { case (t, v) => v / math.pow(1 + r, t) }.sum
       def dnpv(r: Double) = ts.map { case (t, v) => -t * v / math.pow(1 + r, t + 1) }.sum
 

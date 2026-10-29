@@ -8,7 +8,7 @@ private[domain] trait Keyed[A] {
   def values: Array[A]
   def key(a: A): String
   def parse(s: String): Either[String, A] = values.find(key(_) == s.toLowerCase).toRight(s"unknown value: $s")
-  def render(a: A): String               = key(a)
+  def render(a: A): String                = key(a)
 }
 
 // ---------- Wallets ----------
@@ -124,8 +124,9 @@ enum Recurrence(val key: String) {
   case Weekly  extends Recurrence("weekly")
   case Monthly extends Recurrence("monthly")
   case Yearly  extends Recurrence("yearly")
+
   /** One fixed window from `startDate` to `endDate`. */
-  case Custom  extends Recurrence("custom")
+  case Custom extends Recurrence("custom")
 }
 object Recurrence extends Keyed[Recurrence] { def key(a: Recurrence) = a.key }
 
@@ -209,10 +210,13 @@ final case class Schedule(
 // ---------- Objectives ----------
 
 enum ObjectiveKind(val key: String) {
+
   /** Saving toward a target: linked expenses/transfers add, linked income withdraws. */
-  case Goal     extends ObjectiveKind("goal")
+  case Goal extends ObjectiveKind("goal")
+
   /** Money lent: linked expenses are lent out, linked income is repaid. */
-  case Lent     extends ObjectiveKind("lent")
+  case Lent extends ObjectiveKind("lent")
+
   /** Money borrowed: linked income is received, linked expenses repay it. */
   case Borrowed extends ObjectiveKind("borrowed")
 }
@@ -235,19 +239,19 @@ final case class Objective(
 
 sealed trait BudgetError
 object BudgetError {
-  final case class WalletNotFound(id: WalletId)                  extends BudgetError
-  final case class CategoryNotFound(id: CategoryId)              extends BudgetError
-  final case class PayeeNotFound(id: PayeeId)                    extends BudgetError
-  final case class TagNotFound(id: TagId)                        extends BudgetError
-  final case class TransactionNotFound(id: TransactionId)        extends BudgetError
-  final case class BudgetNotFound(id: BudgetId)                  extends BudgetError
-  final case class ScheduleNotFound(id: ScheduleId)              extends BudgetError
-  final case class ObjectiveNotFound(id: ObjectiveId)            extends BudgetError
-  final case class RuleNotFound(id: RuleId)                      extends BudgetError
-  final case class ReadOnlyWallet(id: WalletId)                  extends BudgetError
-  final case class Invalid(reason: String)                       extends BudgetError
+  final case class WalletNotFound(id: WalletId)                        extends BudgetError
+  final case class CategoryNotFound(id: CategoryId)                    extends BudgetError
+  final case class PayeeNotFound(id: PayeeId)                          extends BudgetError
+  final case class TagNotFound(id: TagId)                              extends BudgetError
+  final case class TransactionNotFound(id: TransactionId)              extends BudgetError
+  final case class BudgetNotFound(id: BudgetId)                        extends BudgetError
+  final case class ScheduleNotFound(id: ScheduleId)                    extends BudgetError
+  final case class ObjectiveNotFound(id: ObjectiveId)                  extends BudgetError
+  final case class RuleNotFound(id: RuleId)                            extends BudgetError
+  final case class ReadOnlyWallet(id: WalletId)                        extends BudgetError
+  final case class Invalid(reason: String)                             extends BudgetError
   final case class MissingFxRate(from: CurrencyCode, to: CurrencyCode) extends BudgetError
-  final case class ScheduleFinished(id: ScheduleId)              extends BudgetError
-  final case class AlreadyRecorded(id: ScheduleId, due: LocalDate) extends BudgetError
-  final case class ImportFailed(errors: List[String])            extends BudgetError
+  final case class ScheduleFinished(id: ScheduleId)                    extends BudgetError
+  final case class AlreadyRecorded(id: ScheduleId, due: LocalDate)     extends BudgetError
+  final case class ImportFailed(errors: List[String])                  extends BudgetError
 }

@@ -27,22 +27,27 @@ object LedgerAccounting {
       else
         for {
           user    <- users.find(userId).flatMap(Sync[F].fromOption(_, new IllegalStateException(s"unknown user ${userId.value}")))
-          contact <- accounting.catalog.contactForUser(ContactKind.Customer, userId, Title.assume(user.displayName.value),
-                                                       Some(user.email), payment.currency)
-          revenue  = if (payment.courseId.isDefined) SystemAccounts.CourseRevenue else SystemAccounts.SubscriptionRevenue
-          draft    = LedgerService.Draft(
-                       date         = LocalDate.ofInstant(payment.createdAt, ZoneOffset.UTC),
-                       reference    = JournalRef.option(payment.cloudpaymentsRef.take(64)),
-                       memo         = None,
-                       currency     = payment.currency,
-                       exchangeRate = None,
-                       lines        = List(
-                         JournalLine(SystemAccounts.PaymentClearing.id, Side.Debit, payment.amountMinor, Some(contact.id)),
-                         JournalLine(revenue.id, Side.Credit, payment.amountMinor, Some(contact.id))
-                       )
-                     )
-          res     <- accounting.ledger.postAutomated(draft, JournalSource.Payment, payment.id.value)
-          _       <- res.leftMap(err => new IllegalStateException(s"ledger rejected payment ${payment.id.value}: $err")).liftTo[F]
+          contact <- accounting.catalog.contactForUser(
+            ContactKind.Customer,
+            userId,
+            Title.assume(user.displayName.value),
+            Some(user.email),
+            payment.currency
+          )
+          revenue = if (payment.courseId.isDefined) SystemAccounts.CourseRevenue else SystemAccounts.SubscriptionRevenue
+          draft   = LedgerService.Draft(
+            date = LocalDate.ofInstant(payment.createdAt, ZoneOffset.UTC),
+            reference = JournalRef.option(payment.cloudpaymentsRef.take(64)),
+            memo = None,
+            currency = payment.currency,
+            exchangeRate = None,
+            lines = List(
+              JournalLine(SystemAccounts.PaymentClearing.id, Side.Debit, payment.amountMinor, Some(contact.id)),
+              JournalLine(revenue.id, Side.Credit, payment.amountMinor, Some(contact.id))
+            )
+          )
+          res <- accounting.ledger.postAutomated(draft, JournalSource.Payment, payment.id.value)
+          _   <- res.leftMap(err => new IllegalStateException(s"ledger rejected payment ${payment.id.value}: $err")).liftTo[F]
         } yield ()
 
     def revenueReport(year: Int, month: Int): F[List[(UserId, PriceMinor)]] = {

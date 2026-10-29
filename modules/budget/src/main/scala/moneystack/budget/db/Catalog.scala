@@ -12,6 +12,7 @@ import skunk.implicits.*
 /** Categories, payees, tags and exchange rates. */
 trait Catalog[F[_]] {
   def createCategory(c: Category): F[Category]
+
   /** Inserts unless the owner has a category of that kind and name. */
   def ensureCategory(c: Category): F[Unit]
   def categories(owner: UserId): F[List[Category]]
@@ -30,8 +31,10 @@ trait Catalog[F[_]] {
 
 object Catalog {
 
-  import Codecs.{category as categoryC, categoryId as categoryIdC, fxQuote as fxC, payee as payeeC, payeeId as payeeIdC,
-                 tag as tagC, userId as userIdC}
+  import Codecs.{
+    category as categoryC, categoryId as categoryIdC, fxQuote as fxC, payee as payeeC, payeeId as payeeIdC,
+    tag as tagC, userId as userIdC
+  }
   import skunk.codec.all.bool
 
   def make[F[_]: Concurrent](pool: Resource[F, Session[F]]): Catalog[F] = new Catalog[F] {

@@ -37,11 +37,14 @@ final class BudgetRoutes[F[_]: Async](
 
   private given QueryParamDecoder[WalletId]     = uuidParam("wallet id", WalletId.assume)
   private given QueryParamDecoder[CategoryId]   = uuidParam("category id", CategoryId.assume)
-  private given QueryParamDecoder[CurrencyCode] = QueryParamDecoder[String].emap(s => CurrencyCode.either(s.toUpperCase).leftMap(ParseFailure(_, s)))
+  private given QueryParamDecoder[CurrencyCode] =
+    QueryParamDecoder[String].emap(s => CurrencyCode.either(s.toUpperCase).leftMap(ParseFailure(_, s)))
   private given QueryParamDecoder[CategoryKind] = enumParam(CategoryKind.parse)
   private given QueryParamDecoder[Bucket]       = enumParam(Bucket.parse)
   private given QueryParamDecoder[YearMonth]    =
-    QueryParamDecoder[String].emap(s => Either.catchNonFatal(YearMonth.parse(s)).leftMap(_ => ParseFailure(s"invalid month: $s (expected YYYY-MM)", s)))
+    QueryParamDecoder[String].emap(s =>
+      Either.catchNonFatal(YearMonth.parse(s)).leftMap(_ => ParseFailure(s"invalid month: $s (expected YYYY-MM)", s))
+    )
 
   private object WalletParam   extends OptionalMultiQueryParamDecoderMatcher[WalletId]("wallet")
   private object CategoryParam extends OptionalValidatingQueryParamDecoderMatcher[CategoryId]("category")
@@ -60,32 +63,43 @@ final class BudgetRoutes[F[_]: Async](
     val body = errorBody(err)
     err match {
       case WalletNotFound(_) | CategoryNotFound(_) | PayeeNotFound(_) | TagNotFound(_) | TransactionNotFound(_) | BudgetNotFound(_) |
-           ScheduleNotFound(_) | ObjectiveNotFound(_) | RuleNotFound(_)   => NotFound(body)
-      case ReadOnlyWallet(_)                                             => Forbidden(body)
-      case ScheduleFinished(_) | AlreadyRecorded(_, _)                   => Conflict(body)
-      case ImportFailed(errors)                                          => BadRequest(Map("errors" -> errors).asJson)
-      case _                                                             => BadRequest(body)
+          ScheduleNotFound(_) | ObjectiveNotFound(_) | RuleNotFound(_) => NotFound(body)
+      case ReadOnlyWallet(_)                           => Forbidden(body)
+      case ScheduleFinished(_) | AlreadyRecorded(_, _) => Conflict(body)
+      case ImportFailed(errors)                        => BadRequest(Map("errors" -> errors).asJson)
+      case _                                           => BadRequest(body)
     }
   }
 
   private def currency(p: Option[ValidatedNel[ParseFailure, CurrencyCode]])(f: CurrencyCode => F[Response[F]]): F[Response[F]] =
     param(p, defaultCurrency).fold(bad, f)
 
-  private def walletsOf(p: cats.data.Validated[cats.data.NonEmptyList[ParseFailure], List[WalletId]]): Either[String, Option[List[WalletId]]] =
+  private def walletsOf(p: cats.data.Validated[cats.data.NonEmptyList[ParseFailure], List[WalletId]])
+      : Either[String, Option[List[WalletId]]] =
     p.toEither.leftMap(_.head.sanitized).map(ws => Option.when(ws.nonEmpty)(ws))
 
   /** Period, currency and wallet filter, the arguments most insight routes share. */
-  private def scoped(from: Option[ValidatedNel[ParseFailure, LocalDate]], to: Option[ValidatedNel[ParseFailure, LocalDate]],
-                     c: Option[ValidatedNel[ParseFailure, CurrencyCode]],
-                     w: cats.data.Validated[cats.data.NonEmptyList[ParseFailure], List[WalletId]])(
+  private def scoped(
+      from: Option[ValidatedNel[ParseFailure, LocalDate]],
+      to: Option[ValidatedNel[ParseFailure, LocalDate]],
+      c: Option[ValidatedNel[ParseFailure, CurrencyCode]],
+      w: cats.data.Validated[cats.data.NonEmptyList[ParseFailure], List[WalletId]]
+  )(
       f: (Period, CurrencyCode, Option[List[WalletId]]) => F[Response[F]]
   ): F[Response[F]] =
-    walletsOf(w).fold(bad, ws => period(from, to)((a, b) =>
-      if (a.isAfter(b)) bad("from must not be after to") else currency(c)(ccy => f(Period(a, b), ccy, ws))))
+    walletsOf(w).fold(
+      bad,
+      ws =>
+        period(from, to)((a, b) =>
+          if (a.isAfter(b)) bad("from must not be after to") else currency(c)(ccy => f(Period(a, b), ccy, ws))
+        )
+    )
 
   /** Plain text, not a JSON string: the circe codec in scope would otherwise quote it. */
   private def csv(body: String): F[Response[F]] =
-    Async[F].pure(Response[F](Status.Ok).withEntity(body)(using EntityEncoder.stringEncoder[F]).withContentType(`Content-Type`(MediaType.text.csv)))
+    Async[F].pure(
+      Response[F](Status.Ok).withEntity(body)(using EntityEncoder.stringEncoder[F]).withContentType(`Content-Type`(MediaType.text.csv))
+    )
 
   val routes: HttpRoutes[F] = HttpRoutes.of[F] {
 
@@ -98,7 +112,9 @@ final class BudgetRoutes[F[_]: Async](
       authed(req)(u => decoded[MoneyService.NewWallet](req)(b => money.createWallet(u, b).flatMap(Created(_))))
 
     case req @ POST -> Root / "budget" / "wallets" / WalletIdVar(id) / "archive" =>
-      authed(req)(u => decoded[BudgetJson.ArchiveBody](req)(b => money.setWalletArchived(u, id, b.archived).flatMap(_.fold(NotFound())(Ok(_)))))
+      authed(req)(u =>
+        decoded[BudgetJson.ArchiveBody](req)(b => money.setWalletArchived(u, id, b.archived).flatMap(_.fold(NotFound())(Ok(_))))
+      )
 
     case req @ POST -> Root / "budget" / "wallets" / WalletIdVar(id) / "shares" =>
       authed(req)(u => decoded[BudgetJson.ShareBody](req)(b => money.shareWallet(u, id, b.userId).flatMap(respond(_)(_ => NoContent()))))
@@ -107,7 +123,9 @@ final class BudgetRoutes[F[_]: Async](
       authed(req)(u => money.unshareWallet(u, id, member).flatMap(respond(_)(_ => NoContent())))
 
     case req @ POST -> Root / "budget" / "wallets" / WalletIdVar(id) / "import" :? DryRunParam(dry) =>
-      authed(req)(u => req.bodyText.compile.string.flatMap(body => money.importCsv(u, id, body, dry.getOrElse(false)).flatMap(respond(_)(Ok(_)))))
+      authed(req)(u =>
+        req.bodyText.compile.string.flatMap(body => money.importCsv(u, id, body, dry.getOrElse(false)).flatMap(respond(_)(Ok(_))))
+      )
 
     // ---- catalogue ----
 
@@ -118,7 +136,9 @@ final class BudgetRoutes[F[_]: Async](
       authed(req)(u => decoded[MoneyService.NewCategory](req)(b => money.createCategory(u, b).flatMap(respond(_)(Created(_)))))
 
     case req @ POST -> Root / "budget" / "categories" / CategoryIdVar(id) / "archive" =>
-      authed(req)(u => decoded[BudgetJson.ArchiveBody](req)(b => money.setCategoryArchived(u, id, b.archived).flatMap(_.fold(NotFound())(Ok(_)))))
+      authed(req)(u =>
+        decoded[BudgetJson.ArchiveBody](req)(b => money.setCategoryArchived(u, id, b.archived).flatMap(_.fold(NotFound())(Ok(_))))
+      )
 
     case req @ GET -> Root / "budget" / "payees" =>
       authed(req)(u => money.payees(u).flatMap(Ok(_)))
@@ -137,10 +157,18 @@ final class BudgetRoutes[F[_]: Async](
 
     // ---- transactions ----
 
-    case req @ GET -> Root / "budget" / "transactions" :? WalletParam(w) +& CategoryParam(c) +& SearchParam(q) +& From(from) +& To(to) +& Limit(l) =>
-      authed(req)(u => (walletsOf(w), optParam(c)).tupled.fold(bad, { case (ws, cat) =>
-        period(from, to)((a, b) => money.transactions(u, MoneyService.Filter(ws.flatMap(_.headOption), cat, q, a, b, limit(l))).flatMap(Ok(_)))
-      }))
+    case req @ GET -> Root / "budget" / "transactions" :?
+        WalletParam(w) +& CategoryParam(c) +& SearchParam(q) +& From(from) +& To(to) +& Limit(l) =>
+      authed(req)(u =>
+        (walletsOf(w), optParam(c)).tupled.fold(
+          bad,
+          { case (ws, cat) =>
+            period(from, to)((a, b) =>
+              money.transactions(u, MoneyService.Filter(ws.flatMap(_.headOption), cat, q, a, b, limit(l))).flatMap(Ok(_))
+            )
+          }
+        )
+      )
 
     case req @ POST -> Root / "budget" / "transactions" =>
       authed(req)(u => decoded[MoneyService.NewTransaction](req)(b => money.addTransaction(u, b).flatMap(respond(_)(Created(_)))))
@@ -194,7 +222,9 @@ final class BudgetRoutes[F[_]: Async](
       authed(req)(u => asOf(d)(day => plans.processDue(u, day).flatMap(n => Ok(Map("recorded" -> n).asJson))))
 
     case req @ POST -> Root / "budget" / "schedules" / ScheduleIdVar(id) / "active" =>
-      authed(req)(u => decoded[BudgetJson.ActiveBody](req)(b => plans.setScheduleActive(u, id, b.active).flatMap(_.fold(NotFound())(Ok(_)))))
+      authed(req)(u =>
+        decoded[BudgetJson.ActiveBody](req)(b => plans.setScheduleActive(u, id, b.active).flatMap(_.fold(NotFound())(Ok(_))))
+      )
 
     case req @ POST -> Root / "budget" / "schedules" / ScheduleIdVar(id) / "pay" =>
       authed(req)(u => decoded[BudgetJson.PayBody](req)(b => plans.pay(u, id, b.date, b.amountMinor).flatMap(respond(_)(Created(_)))))
@@ -217,38 +247,65 @@ final class BudgetRoutes[F[_]: Async](
       authed(req)(u => decoded[PlanService.NewObjective](req)(b => plans.createObjective(u, b).flatMap(respond(_)(Created(_)))))
 
     case req @ POST -> Root / "budget" / "objectives" / ObjectiveIdVar(id) / "archive" =>
-      authed(req)(u => decoded[BudgetJson.ArchiveBody](req)(b => plans.setObjectiveArchived(u, id, b.archived).flatMap(_.fold(NotFound())(Ok(_)))))
+      authed(req)(u =>
+        decoded[BudgetJson.ArchiveBody](req)(b => plans.setObjectiveArchived(u, id, b.archived).flatMap(_.fold(NotFound())(Ok(_))))
+      )
 
     // ---- insights ----
 
     case req @ GET -> Root / "budget" / "insights" / "summary" :? From(from) +& To(to) +& CurrencyParam(c) +& WalletParam(w) =>
       authed(req)(u => scoped(from, to, c, w)((p, ccy, ws) => insights.summary(u, p, ccy, ws).flatMap(respond(_)(Ok(_)))))
 
-    case req @ GET -> Root / "budget" / "insights" / "categories" :? From(from) +& To(to) +& CurrencyParam(c) +& WalletParam(w) +& KindParam(k) =>
-      authed(req)(u => param(k, CategoryKind.Expense).fold(bad, kind =>
-        scoped(from, to, c, w)((p, ccy, ws) => insights.categories(u, p, kind, ccy, ws).flatMap(respond(_)(Ok(_))))))
+    case req @ GET -> Root / "budget" / "insights" / "categories" :?
+        From(from) +& To(to) +& CurrencyParam(c) +& WalletParam(w) +& KindParam(k) =>
+      authed(req)(u =>
+        param(k, CategoryKind.Expense).fold(
+          bad,
+          kind =>
+            scoped(from, to, c, w)((p, ccy, ws) => insights.categories(u, p, kind, ccy, ws).flatMap(respond(_)(Ok(_))))
+        )
+      )
 
-    case req @ GET -> Root / "budget" / "insights" / "trend" :? From(from) +& To(to) +& CurrencyParam(c) +& WalletParam(w) +& BucketParam(bk) =>
-      authed(req)(u => param(bk, Bucket.Month).fold(bad, bucket =>
-        scoped(from, to, c, w)((p, ccy, ws) => insights.trend(u, p, bucket, ccy, ws).flatMap(respond(_)(Ok(_))))))
+    case req @ GET -> Root / "budget" / "insights" / "trend" :?
+        From(from) +& To(to) +& CurrencyParam(c) +& WalletParam(w) +& BucketParam(bk) =>
+      authed(req)(u =>
+        param(bk, Bucket.Month).fold(
+          bad,
+          bucket =>
+            scoped(from, to, c, w)((p, ccy, ws) => insights.trend(u, p, bucket, ccy, ws).flatMap(respond(_)(Ok(_))))
+        )
+      )
 
     case req @ GET -> Root / "budget" / "insights" / "compare" :? From(from) +& To(to) +& CurrencyParam(c) =>
-      authed(req)(u => scoped(from, to, c, cats.data.Validated.valid(Nil))((p, ccy, _) => insights.compare(u, p, ccy).flatMap(respond(_)(Ok(_)))))
+      authed(req)(u =>
+        scoped(from, to, c, cats.data.Validated.valid(Nil))((p, ccy, _) => insights.compare(u, p, ccy).flatMap(respond(_)(Ok(_))))
+      )
 
     case req @ GET -> Root / "budget" / "insights" / "cashflow" :? From(from) +& To(to) +& CurrencyParam(c) =>
-      authed(req)(u => scoped(from, to, c, cats.data.Validated.valid(Nil))((p, ccy, _) => insights.cashflow(u, p, ccy).flatMap(respond(_)(Ok(_)))))
+      authed(req)(u =>
+        scoped(from, to, c, cats.data.Validated.valid(Nil))((p, ccy, _) => insights.cashflow(u, p, ccy).flatMap(respond(_)(Ok(_))))
+      )
 
     case req @ GET -> Root / "budget" / "insights" / "balances" :? AsOf(d) +& CurrencyParam(c) =>
       authed(req)(u => asOf(d)(day => currency(c)(ccy => insights.balances(u, day, ccy).flatMap(respond(_)(Ok(_))))))
 
     case req @ GET -> Root / "budget" / "insights" / "balance-history" :? From(from) +& To(to) +& CurrencyParam(c) =>
-      authed(req)(u => scoped(from, to, c, cats.data.Validated.valid(Nil))((p, ccy, _) => insights.balanceHistory(u, p, ccy).flatMap(respond(_)(Ok(_)))))
+      authed(req)(u =>
+        scoped(from, to, c, cats.data.Validated.valid(Nil))((p, ccy, _) => insights.balanceHistory(u, p, ccy).flatMap(respond(_)(Ok(_))))
+      )
 
     case req @ GET -> Root / "budget" / "insights" / "streak" =>
       authed(req)(u => today.flatMap(t => insights.streak(u, t).flatMap(Ok(_))))
 
     case req @ GET -> Root / "budget" / "insights" / "recap" :? MonthParam(m) +& CurrencyParam(c) =>
-      authed(req)(u => today.flatMap(t => param(m, YearMonth.from(t)).fold(bad, month =>
-        currency(c)(ccy => insights.recap(u, month, ccy).flatMap(respond(_)(Ok(_)))))))
+      authed(req)(u =>
+        today.flatMap(t =>
+          param(m, YearMonth.from(t)).fold(
+            bad,
+            month =>
+              currency(c)(ccy => insights.recap(u, month, ccy).flatMap(respond(_)(Ok(_))))
+          )
+        )
+      )
   }
 }

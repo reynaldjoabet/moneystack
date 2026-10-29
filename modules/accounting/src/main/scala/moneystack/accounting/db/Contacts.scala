@@ -10,6 +10,7 @@ import skunk.implicits.*
 /** Customers and vendors. */
 trait Contacts[F[_]] {
   def create(c: Contact): F[Contact]
+
   /** Inserts unless a contact with the same id exists. */
   def ensure(c: Contact): F[Unit]
   def list(kind: Option[ContactKind]): F[List[Contact]]

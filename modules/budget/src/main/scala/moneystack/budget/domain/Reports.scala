@@ -23,10 +23,25 @@ final case class Entry(
     excludedBudgets: List[BudgetId]
 )
 
-final case class Summary(from: LocalDate, to: LocalDate, currency: CurrencyCode, incomeMinor: Long, expenseMinor: Long, netMinor: Long,
-                         savingsRatePct: Option[BigDecimal], averageDailyExpenseMinor: Long, transactions: Int)
+final case class Summary(
+    from: LocalDate,
+    to: LocalDate,
+    currency: CurrencyCode,
+    incomeMinor: Long,
+    expenseMinor: Long,
+    netMinor: Long,
+    savingsRatePct: Option[BigDecimal],
+    averageDailyExpenseMinor: Long,
+    transactions: Int
+)
 
-final case class CategoryTotal(categoryId: Option[CategoryId], name: String, amountMinor: Long, pct: BigDecimal, subcategories: List[CategoryTotal])
+final case class CategoryTotal(
+    categoryId: Option[CategoryId],
+    name: String,
+    amountMinor: Long,
+    pct: BigDecimal,
+    subcategories: List[CategoryTotal]
+)
 
 enum Bucket(val key: String) {
   case Day   extends Bucket("day")
@@ -37,16 +52,36 @@ object Bucket extends Keyed[Bucket] { def key(a: Bucket) = a.key }
 
 final case class TrendPoint(start: LocalDate, incomeMinor: Long, expenseMinor: Long, netMinor: Long)
 
-final case class CategoryChange(categoryId: Option[CategoryId], name: String, currentMinor: Long, previousMinor: Long, changeMinor: Long, changePct: Option[BigDecimal])
+final case class CategoryChange(
+    categoryId: Option[CategoryId],
+    name: String,
+    currentMinor: Long,
+    previousMinor: Long,
+    changeMinor: Long,
+    changePct: Option[BigDecimal]
+)
 
 final case class FlowLink(source: String, target: String, valueMinor: Long)
 
-final case class WalletBalance(walletId: WalletId, name: Title, kind: WalletKind, currency: CurrencyCode, balanceMinor: Long, baseMinor: Long)
+final case class WalletBalance(
+    walletId: WalletId,
+    name: Title,
+    kind: WalletKind,
+    currency: CurrencyCode,
+    balanceMinor: Long,
+    baseMinor: Long
+)
 
 final case class Streak(current: Int, longest: Int, loggedToday: Boolean)
 
-final case class Recap(month: YearMonth, summary: Summary, topCategories: List[CategoryTotal], largestExpense: Option[TransactionId],
-                       previousExpenseMinor: Long, expenseChangePct: Option[BigDecimal])
+final case class Recap(
+    month: YearMonth,
+    summary: Summary,
+    topCategories: List[CategoryTotal],
+    largestExpense: Option[TransactionId],
+    previousExpenseMinor: Long,
+    expenseChangePct: Option[BigDecimal]
+)
 
 final case class LimitStatus(categoryId: CategoryId, name: String, limitMinor: Option[Long], spentMinor: Long)
 
@@ -73,8 +108,15 @@ final case class BudgetStatus(
 )
 
 /** For goals `amountMinor` is saved; for loans it is outstanding. */
-final case class ObjectiveProgress(objective: Objective, principalMinor: Long, repaidMinor: Long, amountMinor: Long,
-                                   remainingMinor: Long, pct: BigDecimal, linked: Int)
+final case class ObjectiveProgress(
+    objective: Objective,
+    principalMinor: Long,
+    repaidMinor: Long,
+    amountMinor: Long,
+    remainingMinor: Long,
+    pct: BigDecimal,
+    linked: Int
+)
 
 object Reports {
 
@@ -95,16 +137,27 @@ object Reports {
   ): Either[BudgetError, List[Entry]] = {
     val byId = txs.map(t => t.id -> t).toMap
     txs.filter(_.kind != TxKind.Transfer).foldLeft[Either[BudgetError, List[Entry]]](Right(Nil)) { (acc, t) =>
-      val ccy = wallets.get(t.walletId).map(_.currency).getOrElse(currency)
+      val ccy           = wallets.get(t.walletId).map(_.currency).getOrElse(currency)
       def conv(x: Long) = convert(fx, x, ccy, currency, t.date)
       acc.flatMap { list =>
         (t.kind, t.refundOf) match {
           case (TxKind.Income, Some(orig)) =>
-            conv(-t.amountMinor).map(a => Entry(t.id, t.date, t.walletId, CategoryKind.Expense,
-              t.categoryId.orElse(byId.get(orig).flatMap(_.categoryId)), t.payeeId, a, t.excludedBudgets) :: list)
+            conv(-t.amountMinor).map(a =>
+              Entry(
+                t.id,
+                t.date,
+                t.walletId,
+                CategoryKind.Expense,
+                t.categoryId.orElse(byId.get(orig).flatMap(_.categoryId)),
+                t.payeeId,
+                a,
+                t.excludedBudgets
+              ) :: list
+            )
           case (kind, _) =>
-            val ck = if (kind == TxKind.Income) CategoryKind.Income else CategoryKind.Expense
-            val parts = if (t.splits.nonEmpty) t.splits.map(s => (Option(s.categoryId), s.amountMinor)) else List((t.categoryId, t.amountMinor))
+            val ck    = if (kind == TxKind.Income) CategoryKind.Income else CategoryKind.Expense
+            val parts =
+              if (t.splits.nonEmpty) t.splits.map(s => (Option(s.categoryId), s.amountMinor)) else List((t.categoryId, t.amountMinor))
             parts.foldLeft[Either[BudgetError, List[Entry]]](Right(list)) { case (l, (cat, amt)) =>
               l.flatMap(xs => conv(amt).map(a => Entry(t.id, t.date, t.walletId, ck, cat, t.payeeId, a, t.excludedBudgets) :: xs))
             }
@@ -119,16 +172,24 @@ object Reports {
     val in      = within(es, p)
     val income  = in.filter(_.kind == CategoryKind.Income).map(_.amountMinor).sum
     val expense = in.filter(_.kind == CategoryKind.Expense).map(_.amountMinor).sum
-    Summary(p.from, p.to, currency, income, expense, income - expense,
-            Option.when(income > 0)(pct(BigDecimal(income - expense), BigDecimal(income))),
-            minor(BigDecimal(expense) / p.days), in.map(_.txId).distinct.size)
+    Summary(
+      p.from,
+      p.to,
+      currency,
+      income,
+      expense,
+      income - expense,
+      Option.when(income > 0)(pct(BigDecimal(income - expense), BigDecimal(income))),
+      minor(BigDecimal(expense) / p.days),
+      in.map(_.txId).distinct.size
+    )
   }
 
   /** Totals per top-level category (subcategories roll up and are listed beneath). */
   def byCategory(es: List[Entry], p: Period, kind: CategoryKind, categories: List[Category]): List[CategoryTotal] = {
-    val cats  = categories.map(c => c.id -> c).toMap
-    val in    = within(es, p).filter(_.kind == kind)
-    val total = BigDecimal(in.map(_.amountMinor).sum)
+    val cats                         = categories.map(c => c.id -> c).toMap
+    val in                           = within(es, p).filter(_.kind == kind)
+    val total                        = BigDecimal(in.map(_.amountMinor).sum)
     def name(id: Option[CategoryId]) = id.flatMap(cats.get).fold("Uncategorized")(c => c.name.value: String)
     def top(id: Option[CategoryId])  = id.flatMap(cats.get).fold(id)(c => c.parentId.orElse(Some(c.id)))
     in.groupBy(e => top(e.categoryId)).toList.map { case (parent, rows) =>
@@ -150,12 +211,12 @@ object Reports {
   /** Income and spending per bucket, including empty buckets. */
   def trend(es: List[Entry], p: Period, b: Bucket): List[TrendPoint] = {
     val step = b match { case Bucket.Day => ChronoUnit.DAYS; case Bucket.Week => ChronoUnit.WEEKS; case Bucket.Month => ChronoUnit.MONTHS }
-    val starts = Iterator.iterate(bucketStart(p.from, b))(_.plus(1, step)).takeWhile(!_.isAfter(p.to)).toList
+    val starts  = Iterator.iterate(bucketStart(p.from, b))(_.plus(1, step)).takeWhile(!_.isAfter(p.to)).toList
     val grouped = within(es, p).groupBy(e => bucketStart(e.date, b))
     starts.map { s =>
       val rows = grouped.getOrElse(s, Nil)
-      val i = rows.filter(_.kind == CategoryKind.Income).map(_.amountMinor).sum
-      val x = rows.filter(_.kind == CategoryKind.Expense).map(_.amountMinor).sum
+      val i    = rows.filter(_.kind == CategoryKind.Income).map(_.amountMinor).sum
+      val x    = rows.filter(_.kind == CategoryKind.Expense).map(_.amountMinor).sum
       TrendPoint(s, i, x, i - x)
     }
   }
@@ -165,13 +226,19 @@ object Reports {
 
   /** Spending per top-level category against the previous period, biggest increase first. */
   def compare(es: List[Entry], p: Period, categories: List[Category]): List[CategoryChange] = {
-    val now  = byCategory(es, p, CategoryKind.Expense, categories).map(c => c.categoryId -> c).toMap
+    val now    = byCategory(es, p, CategoryKind.Expense, categories).map(c => c.categoryId -> c).toMap
     val before = byCategory(es, previousPeriod(p), CategoryKind.Expense, categories).map(c => c.categoryId -> c).toMap
     (now.keySet ++ before.keySet).toList.map { id =>
       val cur  = now.get(id).fold(0L)(_.amountMinor)
       val prev = before.get(id).fold(0L)(_.amountMinor)
-      CategoryChange(id, now.get(id).orElse(before.get(id)).fold("Uncategorized")(_.name), cur, prev, cur - prev,
-                     Option.when(prev != 0)(pct(BigDecimal(cur - prev), BigDecimal(prev))))
+      CategoryChange(
+        id,
+        now.get(id).orElse(before.get(id)).fold("Uncategorized")(_.name),
+        cur,
+        prev,
+        cur - prev,
+        Option.when(prev != 0)(pct(BigDecimal(cur - prev), BigDecimal(prev)))
+      )
     }.sortBy(c => -c.changeMinor)
   }
 
@@ -194,11 +261,19 @@ object Reports {
     case TxKind.Transfer => (t.walletId -> -t.amountMinor) :: t.toWalletId.map(_ -> t.toAmountMinor.getOrElse(t.amountMinor)).toList
   }
 
-  def balances(wallets: List[Wallet], txs: List[Transaction], asOf: LocalDate, fx: FxTable, currency: CurrencyCode): Either[BudgetError, List[WalletBalance]] = {
+  def balances(
+      wallets: List[Wallet],
+      txs: List[Transaction],
+      asOf: LocalDate,
+      fx: FxTable,
+      currency: CurrencyCode
+  ): Either[BudgetError, List[WalletBalance]] = {
     val moved = txs.filter(!_.date.isAfter(asOf)).flatMap(effects).groupMapReduce(_._1)(_._2)(_ + _)
     wallets.foldLeft[Either[BudgetError, List[WalletBalance]]](Right(Nil)) { (acc, w) =>
       val native = w.openingBalanceMinor + moved.getOrElse(w.id, 0L)
-      acc.flatMap(l => convert(fx, native, w.currency, currency, asOf).map(b => WalletBalance(w.id, w.name, w.kind, w.currency, native, b) :: l))
+      acc.flatMap(l =>
+        convert(fx, native, w.currency, currency, asOf).map(b => WalletBalance(w.id, w.name, w.kind, w.currency, native, b) :: l)
+      )
     }.map(_.reverse)
   }
 
@@ -214,13 +289,20 @@ object Reports {
   }
 
   def recap(es: List[Entry], month: YearMonth, categories: List[Category], currency: CurrencyCode): Recap = {
-    val p    = Period(month.atDay(1), month.atEndOfMonth)
-    val prev = Period(month.minusMonths(1).atDay(1), month.minusMonths(1).atEndOfMonth)
-    val s    = summary(es, p, currency)
+    val p           = Period(month.atDay(1), month.atEndOfMonth)
+    val prev        = Period(month.minusMonths(1).atDay(1), month.minusMonths(1).atEndOfMonth)
+    val s           = summary(es, p, currency)
     val prevExpense = summary(es, prev, currency).expenseMinor
-    val largest = within(es, p).filter(_.kind == CategoryKind.Expense).groupMapReduce(_.txId)(_.amountMinor)(_ + _).maxByOption(_._2).map(_._1)
-    Recap(month, s, byCategory(es, p, CategoryKind.Expense, categories).take(3), largest, prevExpense,
-          Option.when(prevExpense != 0)(pct(BigDecimal(s.expenseMinor - prevExpense), BigDecimal(prevExpense))))
+    val largest     =
+      within(es, p).filter(_.kind == CategoryKind.Expense).groupMapReduce(_.txId)(_.amountMinor)(_ + _).maxByOption(_._2).map(_._1)
+    Recap(
+      month,
+      s,
+      byCategory(es, p, CategoryKind.Expense, categories).take(3),
+      largest,
+      prevExpense,
+      Option.when(prevExpense != 0)(pct(BigDecimal(s.expenseMinor - prevExpense), BigDecimal(prevExpense)))
+    )
   }
 
   // ---- budgets ----
@@ -246,23 +328,39 @@ object Reports {
   def status(b: Budget, es: List[Entry], categories: List[Category], asOf: LocalDate): Option[BudgetStatus] =
     Periods.periodOf(b, asOf).map { p =>
       val spent    = counted(b, es, p, categories).map(_.amountMinor).sum
-      val rollover = if (!b.rollover) 0L else Periods.previous(b, p).fold(0L)(prev =>
-                       (b.amountMinor - counted(b, es, prev, categories).map(_.amountMinor).sum).max(0L))
+      val rollover = if (!b.rollover) 0L
+      else Periods.previous(b, p).fold(0L)(prev =>
+        (b.amountMinor - counted(b, es, prev, categories).map(_.amountMinor).sum).max(0L)
+      )
       val available = b.amountMinor + rollover
       val remaining = available - spent
       val elapsed   = ChronoUnit.DAYS.between(p.from, asOf) + 1
       val daysLeft  = p.days - elapsed + 1
       val cats      = categories.map(c => c.id -> c).toMap
-      val spentBy   = counted(b, es, p, categories).flatMap(e => e.categoryId.map(id => cats.get(id).flatMap(_.parentId).getOrElse(id) -> e.amountMinor))
-                        .groupMapReduce(_._1)(_._2)(_ + _)
-      val limits    = b.categoryLimits.map(l => l.categoryId -> l.amountMinor).toMap
-      val catRows   = (spentBy.keySet ++ limits.keySet).toList.map { id =>
-                        LimitStatus(id, cats.get(id).fold("Uncategorized")(c => c.name.value: String), limits.get(id), spentBy.getOrElse(id, 0L))
-                      }.sortBy(-_.spentMinor)
-      BudgetStatus(b.id, b.name, p, b.currency, b.amountMinor, rollover, available, spent, remaining,
-                   pct(BigDecimal(spent), BigDecimal(available)), daysLeft,
-                   if (daysLeft > 0) (remaining.max(0L)) / daysLeft else 0L,
-                   minor(BigDecimal(spent) / elapsed * p.days), spent > available, catRows)
+      val spentBy   =
+        counted(b, es, p, categories).flatMap(e => e.categoryId.map(id => cats.get(id).flatMap(_.parentId).getOrElse(id) -> e.amountMinor))
+          .groupMapReduce(_._1)(_._2)(_ + _)
+      val limits  = b.categoryLimits.map(l => l.categoryId -> l.amountMinor).toMap
+      val catRows = (spentBy.keySet ++ limits.keySet).toList.map { id =>
+        LimitStatus(id, cats.get(id).fold("Uncategorized")(c => c.name.value: String), limits.get(id), spentBy.getOrElse(id, 0L))
+      }.sortBy(-_.spentMinor)
+      BudgetStatus(
+        b.id,
+        b.name,
+        p,
+        b.currency,
+        b.amountMinor,
+        rollover,
+        available,
+        spent,
+        remaining,
+        pct(BigDecimal(spent), BigDecimal(available)),
+        daysLeft,
+        if (daysLeft > 0) (remaining.max(0L)) / daysLeft else 0L,
+        minor(BigDecimal(spent) / elapsed * p.days),
+        spent > available,
+        catRows
+      )
     }
 
   /** Past periods (most recent first) with what was counted in each, for history charts. */
@@ -274,8 +372,8 @@ object Reports {
 
   /** `linked` are the objective's transactions with amounts already in its currency. */
   def objective(o: Objective, linked: List[(TxKind, Long)]): ObjectiveProgress = {
-    val incoming = linked.collect { case (TxKind.Income, a) => a }.sum
-    val outgoing = linked.collect { case (TxKind.Expense | TxKind.Transfer, a) => a }.sum
+    val incoming                    = linked.collect { case (TxKind.Income, a) => a }.sum
+    val outgoing                    = linked.collect { case (TxKind.Expense | TxKind.Transfer, a) => a }.sum
     val (principal, repaid, amount) = o.kind match {
       case ObjectiveKind.Goal     => (outgoing, incoming, outgoing - incoming)
       case ObjectiveKind.Lent     => (outgoing, incoming, outgoing - incoming)

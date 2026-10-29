@@ -116,7 +116,7 @@ object BankRules {
       case (_, _) if c.value.trim.isEmpty => Some("condition value must not be blank")
       case (RuleField.Amount, RuleOperator.Equals | RuleOperator.GreaterThan | RuleOperator.LessThan) =>
         c.value.toLongOption.filter(_ >= 0L).fold(Some(s"amount must be a non-negative integer of minor units: ${c.value}"))(_ => None)
-      case (RuleField.Amount, op) => Some(s"${op.key} does not apply to amounts")
+      case (RuleField.Amount, op)                                                    => Some(s"${op.key} does not apply to amounts")
       case (RuleField.Description, RuleOperator.GreaterThan | RuleOperator.LessThan) =>
         Some(s"${c.operator.key} does not apply to descriptions")
       case (RuleField.Description, _) => None
@@ -132,7 +132,8 @@ object BankRules {
       case RuleApplyTo.Both        => true
     }
     val results = rule.conditions.map(holds(_, tx))
-    direction && (rule.conjunction match {
+    direction &&
+    (rule.conjunction match {
       case Conjunction.All => results.forall(identity)
       case Conjunction.Any => results.exists(identity)
     })

@@ -12,7 +12,8 @@ class BudgetCsvSuite extends munit.FunSuite {
         |2026-03-01,Salary,"2,500.00",Salary
         |2026-03-02,Coffee,-4.5,Dining
         |2026-03-03,Refund,12.00,
-        |""".stripMargin)
+        |""".stripMargin
+    )
     assertEquals(p.errors, Nil)
     assertEquals(p.rows.map(r => (r.kind, r.amountMinor)), List(TxKind.Income -> 250_000L, TxKind.Expense -> 450L, TxKind.Income -> 1_200L))
     assertEquals(p.rows.map(_.category), List(Some("Salary"), Some("Dining"), None))

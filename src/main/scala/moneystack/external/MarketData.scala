@@ -26,7 +26,7 @@ final class CompositeMarketData[F[_]: Concurrent](providers: List[MarketData[F]]
   def quote(t: Ticker, e: Exchange): F[Option[Quote]] =
     providers.foldLeftM[F, Option[Quote]](None) {
       case (Some(q), _) => Concurrent[F].pure(Some(q))
-      case (None,    p) => p.quote(t, e)
+      case (None, p)    => p.quote(t, e)
     }
 
   def quotes(refs: List[(Ticker, Exchange)]): F[List[Quote]] =
@@ -37,21 +37,22 @@ final class CompositeMarketData[F[_]: Concurrent](providers: List[MarketData[F]]
 object SandboxMarketData {
   def make[F[_]: Sync](snapshot: Map[(Ticker, Exchange), Quote]): F[MarketData[F]] =
     Sync[F].pure(new MarketData[F] {
-      def quote(t: Ticker, e: Exchange): F[Option[Quote]] = Sync[F].pure(snapshot.get((t, e)))
+      def quote(t: Ticker, e: Exchange): F[Option[Quote]]        = Sync[F].pure(snapshot.get((t, e)))
       def quotes(refs: List[(Ticker, Exchange)]): F[List[Quote]] =
         Sync[F].pure(refs.flatMap(r => snapshot.get(r)))
     })
 }
 
 object MarketData {
+
   /** Convenience constructor for a single dummy quote, used in fallback paths. */
   def dummyQuote(t: Ticker, e: Exchange, c: CurrencyCode, price: BigDecimal): Quote =
     Quote(
-      ticker   = t,
+      ticker = t,
       exchange = e,
-      price    = UnitPrice.positive(price).fold(sys.error, identity),
+      price = UnitPrice.positive(price).fold(sys.error, identity),
       currency = c,
-      asOf     = Instant.now(),
-      source   = "sandbox"
+      asOf = Instant.now(),
+      source = "sandbox"
     )
 }

@@ -10,6 +10,7 @@ import skunk.implicits.*
 
 /** Allocation targets, contribution limits and goals, per owner. */
 trait Plans[F[_]] {
+
   /** Replaces the owner's targets under one taxonomy. */
   def setTargets(owner: UserId, taxonomy: Taxonomy, ts: List[AllocationTarget]): F[Unit]
   def targets(owner: UserId, taxonomy: Taxonomy): F[List[AllocationTarget]]
@@ -25,8 +26,10 @@ trait Plans[F[_]] {
 
 object Plans {
 
-  import Codecs.{accountId as accountIdC, goal as goalC, goalId as goalIdC, limit as limitC, limitId as limitIdC,
-                 target as targetC, taxonomy as taxonomyC, userId as userIdC}
+  import Codecs.{
+    accountId as accountIdC, goal as goalC, goalId as goalIdC, limit as limitC, limitId as limitIdC,
+    target as targetC, taxonomy as taxonomyC, userId as userIdC
+  }
 
   def make[F[_]: Concurrent](pool: Resource[F, Session[F]]): Plans[F] = new Plans[F] {
 
@@ -106,7 +109,9 @@ object Plans {
       sql"INSERT INTO portfolio.contribution_limit_accounts (limit_id, account_id) VALUES ($limitIdC, $accountIdC)".command
 
     val limits: Query[UserId, ContributionLimit] =
-      sql"SELECT $limitCols FROM portfolio.contribution_limits WHERE owner_id = $userIdC ORDER BY contribution_year DESC, name".query(limitC)
+      sql"SELECT $limitCols FROM portfolio.contribution_limits WHERE owner_id = $userIdC ORDER BY contribution_year DESC, name".query(
+        limitC
+      )
 
     val limitAccounts: Query[UserId, (LimitId, InvestmentAccountId)] =
       sql"""SELECT la.limit_id, la.account_id FROM portfolio.contribution_limit_accounts la

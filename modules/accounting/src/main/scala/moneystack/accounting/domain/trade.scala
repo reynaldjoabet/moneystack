@@ -229,8 +229,10 @@ final case class TaxActivity(kind: DocumentKind, taxRateId: TaxRateId, taxableBa
 
 object Trade {
 
-  def lineAmount(quantity: BigDecimal, unitPriceMinor: Long): Long =
-    (quantity * unitPriceMinor).setScale(0, RoundingMode.HALF_EVEN).toLongExact
+  def lineAmount(
+      quantity: BigDecimal,
+      unitPriceMinor: Long
+  ): Long = (quantity * unitPriceMinor).setScale(0, RoundingMode.HALF_EVEN).toLongExact
 
   def lineTax(amountMinor: Long, rate: Option[Bps]): Long =
     rate.fold(0L)(bps => (BigDecimal(amountMinor) * bps.value / 10_000).setScale(0, RoundingMode.HALF_EVEN).toLongExact)

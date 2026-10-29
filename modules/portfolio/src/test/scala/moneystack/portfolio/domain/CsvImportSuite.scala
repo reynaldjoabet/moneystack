@@ -28,8 +28,8 @@ class CsvImportSuite extends munit.FunSuite {
   }
 
   test("import keys are stable per account and ignore number formatting") {
-    val a = CsvImport.parse("date,type,currency,amount\n2026-01-01,deposit,USD,100.00").rows.head
-    val b = CsvImport.parse("date,type,currency,amount\n2026-01-01,deposit,USD,100").rows.head
+    val a    = CsvImport.parse("date,type,currency,amount\n2026-01-01,deposit,USD,100.00").rows.head
+    val b    = CsvImport.parse("date,type,currency,amount\n2026-01-01,deposit,USD,100").rows.head
     val acct = InvestmentAccountId.assume(UUID.randomUUID())
     assertEquals(a.key(acct), b.key(acct))
     assertNotEquals(a.key(acct), a.key(InvestmentAccountId.assume(UUID.randomUUID())))

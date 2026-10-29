@@ -15,9 +15,10 @@ object Codecs {
   export CoreCodecs.{body, bps, currency, fine, instant, title, userId}
 
   /** Money in a NUMERIC(20, 6) column. */
-  val money: Codec[BigDecimal]    = numeric(20, 6)
+  val money: Codec[BigDecimal] = numeric(20, 6)
+
   /** Units held, NUMERIC(30, 10) for crypto precision. */
-  val units: Codec[BigDecimal]    = numeric(30, 10)
+  val units: Codec[BigDecimal] = numeric(30, 10)
 
   val accountId: Codec[InvestmentAccountId] = uuid.imap(InvestmentAccountId.assume)(_.value)
   val assetId: Codec[AssetId]               = uuid.imap(AssetId.assume)(_.value)
@@ -43,14 +44,11 @@ object Codecs {
   val account: Codec[InvestmentAccount] =
     (accountId *: userId *: title *: accountKind *: tracking *: currency *: title.opt *: bool *: instant).to[InvestmentAccount]
 
-  val snapshot: Codec[BalanceSnapshot] =
-    (accountId *: date *: money *: money).to[BalanceSnapshot]
+  val snapshot: Codec[BalanceSnapshot] = (accountId *: date *: money *: money).to[BalanceSnapshot]
 
-  val asset: Codec[Asset] =
-    (assetId *: symbol *: title *: assetKind *: currency *: instant).to[Asset]
+  val asset: Codec[Asset] = (assetId *: symbol *: title *: assetKind *: currency *: instant).to[Asset]
 
-  val classification: Codec[Classification] =
-    (assetId *: taxonomy *: title *: bps).to[Classification]
+  val classification: Codec[Classification] = (assetId *: taxonomy *: title *: bps).to[Classification]
 
   val quote: Codec[Quote] = (assetId *: date *: fine).to[Quote]
 
@@ -60,20 +58,17 @@ object Codecs {
     (activityId *: accountId *: assetId.opt *: activityType *: date *: units.opt *: fine.opt *: money.opt *: money *:
       currency *: bool *: accountId.opt *: body.opt *: varchar(64).opt *: instant).to[Activity]
 
-  val target: Codec[AllocationTarget] =
-    (targetId *: userId *: taxonomy *: title *: bps).to[AllocationTarget]
+  val target: Codec[AllocationTarget] = (targetId *: userId *: taxonomy *: title *: bps).to[AllocationTarget]
 
   /** A limit without its accounts, which live in `contribution_limit_accounts`. */
-  val limit: Codec[ContributionLimit] =
-    (limitId *: userId *: title *: int4 *: money *: currency *: date.opt *: date.opt).imap {
-      case (id, owner, name, year, amount, ccy, from, to) => ContributionLimit(id, owner, name, year, amount, ccy, Nil, from, to)
-    }(l => (l.id, l.ownerId, l.name, l.year, l.limitAmount, l.currency, l.startDate, l.endDate))
+  val limit: Codec[ContributionLimit] = (limitId *: userId *: title *: int4 *: money *: currency *: date.opt *: date.opt).imap {
+    case (id, owner, name, year, amount, ccy, from, to) => ContributionLimit(id, owner, name, year, amount, ccy, Nil, from, to)
+  }(l => (l.id, l.ownerId, l.name, l.year, l.limitAmount, l.currency, l.startDate, l.endDate))
 
   /** A goal without its funding, which lives in `goal_funding`. */
-  val goal: Codec[Goal] =
-    (goalId *: userId *: title *: money *: currency *: date.opt *: money *: fine *: instant).imap {
-      case (id, owner, name, target, ccy, by, monthly, ret, at) => Goal(id, owner, name, target, ccy, by, monthly, ret, Nil, at)
-    }(g => (g.id, g.ownerId, g.name, g.targetAmount, g.currency, g.targetDate, g.monthlyContribution, g.expectedAnnualReturn, g.createdAt))
+  val goal: Codec[Goal] = (goalId *: userId *: title *: money *: currency *: date.opt *: money *: fine *: instant).imap {
+    case (id, owner, name, target, ccy, by, monthly, ret, at) => Goal(id, owner, name, target, ccy, by, monthly, ret, Nil, at)
+  }(g => (g.id, g.ownerId, g.name, g.targetAmount, g.currency, g.targetDate, g.monthlyContribution, g.expectedAnnualReturn, g.createdAt))
 
   val altAsset: Codec[AltAsset] =
     (altAssetId *: userId *: altAssetKind *: title *: currency *: money *: date *: bps *: money *: vehicleClass.opt *:

@@ -81,12 +81,12 @@ final class LedgerRoutes[F[_]: Async](auth: Request[F] => F[Option[UserId]], led
           (b.unlockFrom, b.unlockTo) match {
             case (Some(f), Some(t)) if f.isAfter(t) => bad("unlockFrom must not be after unlockTo")
             case (Some(_), None) | (None, Some(_))  => bad("unlockFrom and unlockTo must be given together")
-            case _ =>
+            case _                                  =>
               for {
                 now <- Async[F].delay(Instant.now())
-                l    = LedgerLock(b.lockThrough, b.unlockFrom, b.unlockTo, b.reason, u, now)
-                _   <- ledger.setLock(l)
-                r   <- Ok(l)
+                l = LedgerLock(b.lockThrough, b.unlockFrom, b.unlockTo, b.reason, u, now)
+                _ <- ledger.setLock(l)
+                r <- Ok(l)
               } yield r
           }
         }

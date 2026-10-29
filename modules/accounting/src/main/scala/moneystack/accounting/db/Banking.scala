@@ -23,9 +23,11 @@ trait Banking[F[_]] {
 
 object Banking {
 
-  import Codecs.{accountId as accountIdC, bankRule as ruleC, bankRuleId as ruleIdC, bankTransaction as txC,
-                 bankTransactionId as txIdC, bankTxStatus as statusC, contactId as contactIdC,
-                 journalEntryId as entryIdC, ruleCondition as conditionC}
+  import Codecs.{
+    accountId as accountIdC, bankRule as ruleC, bankRuleId as ruleIdC, bankTransaction as txC,
+    bankTransactionId as txIdC, bankTxStatus as statusC, contactId as contactIdC,
+    journalEntryId as entryIdC, ruleCondition as conditionC
+  }
   import skunk.codec.all.{bool, int4, uuid}
 
   def make[F[_]: Concurrent](pool: Resource[F, Session[F]]): Banking[F] =
@@ -37,8 +39,8 @@ object Banking {
             for {
               _ <- s.prepare(Q.insertRule).flatMap(_.execute(r))
               _ <- s.prepare(Q.insertCondition).flatMap(pc =>
-                     r.conditions.zipWithIndex.traverse_ { case (c, i) => pc.execute((r.id, i + 1, c)) }
-                   )
+                r.conditions.zipWithIndex.traverse_ { case (c, i) => pc.execute((r.id, i + 1, c)) }
+              )
             } yield r
           }
         }

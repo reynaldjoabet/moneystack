@@ -13,6 +13,7 @@ import java.time.LocalDate
 /** Daily rates into the ledger's base currency. */
 trait ExchangeRates[F[_]] {
   def upsert(r: FxRate): F[Unit]
+
   /** The most recent rate published on or before `date`. */
   def rateOn(currency: CurrencyCode, date: LocalDate): F[Option[ExchangeRate]]
   def history(currency: CurrencyCode, limit: Int): F[List[FxRate]]

@@ -12,8 +12,15 @@ import java.time.temporal.ChronoUnit
  * until it is issued, which turns it into a [[Document]] and removes the draft.
  * `payload` is the JSON of the document request.
  */
-final case class Draft(id: DraftId, kind: DocumentKind, contactId: ContactId, payload: String, createdBy: UserId,
-                       createdAt: Instant, updatedAt: Instant)
+final case class Draft(
+    id: DraftId,
+    kind: DocumentKind,
+    contactId: ContactId,
+    payload: String,
+    createdBy: UserId,
+    createdAt: Instant,
+    updatedAt: Instant
+)
 
 enum DocumentEventKind(val key: String) {
   case Issued   extends DocumentEventKind("issued")
@@ -38,7 +45,7 @@ enum Every(val key: String, val unit: ChronoUnit) {
 }
 object Every {
   def parse(s: String): Either[String, Every] = values.find(_.key == s.toLowerCase).toRight(s"unknown frequency: $s")
-  def render(e: Every): String               = e.key
+  def render(e: Every): String                = e.key
 }
 
 /**
@@ -74,7 +81,7 @@ enum ReconciliationStatus(val key: String) {
 }
 object ReconciliationStatus {
   def parse(s: String): Either[String, ReconciliationStatus] = values.find(_.key == s.toLowerCase).toRight(s"unknown status: $s")
-  def render(s: ReconciliationStatus): String               = s.key
+  def render(s: ReconciliationStatus): String                = s.key
 }
 
 /**
@@ -96,8 +103,15 @@ final case class Reconciliation(
 )
 
 /** A ledger line on the reconciled account, signed in its normal direction (debits increase a bank account). */
-final case class ReconLine(entryId: JournalEntryId, lineNo: Int, date: LocalDate, reference: Option[JournalRef], memo: Option[Body],
-                           amountMinor: Long, cleared: Boolean)
+final case class ReconLine(
+    entryId: JournalEntryId,
+    lineNo: Int,
+    date: LocalDate,
+    reference: Option[JournalRef],
+    memo: Option[Body],
+    amountMinor: Long,
+    cleared: Boolean
+)
 
 final case class ReconciliationView(reconciliation: Reconciliation, lines: List[ReconLine], clearedMinor: Long, differenceMinor: Long)
 

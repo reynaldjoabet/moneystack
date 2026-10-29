@@ -42,11 +42,11 @@ object Postgres {
       c    <- container
       _    <- Resource.eval((schemas ++ schemas).traverse_(applyScript(c, _)))
       pool <- Session.Builder[IO]
-                .withHost(c.getHost)
-                .withPort(c.getMappedPort(5432).intValue)
-                .withUserAndPassword(c.getUsername, c.getPassword)
-                .withDatabase(c.getDatabaseName)
-                .pooled(8)
+        .withHost(c.getHost)
+        .withPort(c.getMappedPort(5432).intValue)
+        .withUserAndPassword(c.getUsername, c.getPassword)
+        .withDatabase(c.getDatabaseName)
+        .pooled(8)
     } yield pool
 }
 
@@ -65,7 +65,7 @@ abstract class PostgresSuite[Env] extends CatsEffectSuite {
 
   override def munitFixtures = List(db)
 
-  def env: Env                          = db()._2
+  def env: Env                            = db()._2
   def sessions: Resource[IO, Session[IO]] = db()._1
 
   /** Runs a statement that the database must reject, returning the server's message. */

@@ -10,8 +10,17 @@ import skunk.implicits.*
 import java.time.LocalDate
 
 /** A ledger line on an account, raw, for reconciliation. */
-final case class AccountLine(entryId: JournalEntryId, lineNo: Int, date: LocalDate, reference: Option[JournalRef], memo: Option[moneystack.domain.Body],
-                             side: Side, amountMinor: Long, baseAmountMinor: Long, cleared: Boolean)
+final case class AccountLine(
+    entryId: JournalEntryId,
+    lineNo: Int,
+    date: LocalDate,
+    reference: Option[JournalRef],
+    memo: Option[moneystack.domain.Body],
+    side: Side,
+    amountMinor: Long,
+    baseAmountMinor: Long,
+    cleared: Boolean
+)
 
 /** Document drafts, history and recurring templates, and bank reconciliations. */
 trait Office[F[_]] {
@@ -26,6 +35,7 @@ trait Office[F[_]] {
   def createRecurring(r: Recurring): F[Recurring]
   def recurring(): F[List[Recurring]]
   def setRecurringActive(id: RecurringId, active: Boolean): F[Option[Recurring]]
+
   /** Claims occurrence `n` for `document` and moves the template on, inside the caller's transaction. */
   def claimRunIn(s: Session[F], id: RecurringId, n: Int, document: DocumentId): F[Boolean]
 
@@ -40,9 +50,11 @@ trait Office[F[_]] {
 
 object Office {
 
-  import Codecs.{accountId as accountIdC, documentEvent as eventC, documentId as documentIdC, documentKind as kindC, draft as draftC,
-                 draftId as draftIdC, instant, journalEntryId as entryIdC, journalRef, body, recurring as recurringC,
-                 recurringId as recurringIdC, reconciliation as reconC, reconciliationId as reconIdC, side}
+  import Codecs.{
+    accountId as accountIdC, documentEvent as eventC, documentId as documentIdC, documentKind as kindC, draft as draftC,
+    draftId as draftIdC, instant, journalEntryId as entryIdC, journalRef, body, recurring as recurringC,
+    recurringId as recurringIdC, reconciliation as reconC, reconciliationId as reconIdC, side
+  }
   import skunk.codec.all.{bool, date, int4, int8}
 
   def make[F[_]: Concurrent](pool: Resource[F, Session[F]]): Office[F] = new Office[F] {
@@ -170,7 +182,9 @@ object Office {
               AND (r.reconciliation_id IS NULL OR r.reconciliation_id = $reconIdC)
             ORDER BY e.entry_date, e.created_at, l.line_no"""
         .query(entryIdC *: int4 *: date *: journalRef.opt *: body.opt *: side *: int8 *: int8 *: bool.opt)
-        .map { case (e, n, d, ref, memo, sd, amt, base, cleared) => AccountLine(e, n, d, ref, memo, sd, amt, base, cleared.getOrElse(false)) }
+        .map { case (e, n, d, ref, memo, sd, amt, base, cleared) =>
+          AccountLine(e, n, d, ref, memo, sd, amt, base, cleared.getOrElse(false))
+        }
 
     val clear: Command[(ReconciliationId, JournalEntryId, Int)] =
       sql"""INSERT INTO reconciled_lines (reconciliation_id, entry_id, line_no) VALUES ($reconIdC, $entryIdC, $int4)

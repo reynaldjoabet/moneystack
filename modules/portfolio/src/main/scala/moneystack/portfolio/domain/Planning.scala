@@ -38,8 +38,9 @@ object SaveUp {
   private def money(x: BigDecimal) = x.setScale(2, RoundingMode.HALF_EVEN)
 
   /** End-of-month dates from `asOf`, `months` of them. */
-  private def monthEnds(asOf: LocalDate, months: Int): List[LocalDate] =
-    (1 to months).toList.map(i => YearMonth.from(asOf).plusMonths(i.toLong - 1).atEndOfMonth).map(d => if (d.isBefore(asOf)) asOf else d)
+  private def monthEnds(asOf: LocalDate, months: Int): List[LocalDate] = (1 to months).toList.map(i =>
+    YearMonth.from(asOf).plusMonths(i.toLong - 1).atEndOfMonth
+  ).map(d => if (d.isBefore(asOf)) asOf else d)
 
   /** Balance at each month end. */
   def path(current: BigDecimal, monthly: BigDecimal, annualReturn: BigDecimal, asOf: LocalDate, months: Int): List[BigDecimal] = {
@@ -54,23 +55,37 @@ object SaveUp {
     ChronoUnit.MONTHS.between(YearMonth.from(from), YearMonth.from(to)).toInt.max(0)
 
   def overview(in: SaveUpInput, asOf: LocalDate): SaveUpOverview = {
-    val progress = if (in.targetAmount <= 0) BigDecimal(0) else (in.currentValue / in.targetAmount).min(1).setScale(4, RoundingMode.HALF_EVEN)
+    val progress =
+      if (in.targetAmount <= 0) BigDecimal(0) else (in.currentValue / in.targetAmount).min(1).setScale(4, RoundingMode.HALF_EVEN)
     in.targetDate match {
       case Some(td) =>
         val months    = monthsBetween(asOf, td).min(MaxMonths)
-        val projected = if (months == 0) in.currentValue else path(in.currentValue, in.monthlyContribution, in.expectedAnnualReturn, asOf, months).last
+        val projected =
+          if (months == 0) in.currentValue else path(in.currentValue, in.monthlyContribution, in.expectedAnnualReturn, asOf, months).last
         val health =
           if (in.targetAmount <= 0) "not_applicable"
           else if (projected >= in.targetAmount) "on_track"
           else if (projected >= in.targetAmount * BigDecimal("0.9")) "at_risk"
           else "off_track"
-        SaveUpOverview(progress, health, Some(money(projected)), Some(money(requiredMonthly(in, asOf, months))),
-                       completion(in, asOf), trajectory(in, asOf, months))
+        SaveUpOverview(
+          progress,
+          health,
+          Some(money(projected)),
+          Some(money(requiredMonthly(in, asOf, months))),
+          completion(in, asOf),
+          trajectory(in, asOf, months)
+        )
       case None =>
-        val done = completion(in, asOf)
+        val done   = completion(in, asOf)
         val months = done.fold(MaxMonths.min(120))(d => monthsBetween(asOf, d).max(1))
-        SaveUpOverview(progress, if (in.targetAmount <= 0) "not_applicable" else if (done.isDefined) "on_track" else "off_track",
-                       None, None, done, trajectory(in, asOf, months))
+        SaveUpOverview(
+          progress,
+          if (in.targetAmount <= 0) "not_applicable" else if (done.isDefined) "on_track" else "off_track",
+          None,
+          None,
+          done,
+          trajectory(in, asOf, months)
+        )
     }
   }
 
@@ -94,7 +109,7 @@ object SaveUp {
   def trajectory(in: SaveUpInput, asOf: LocalDate, months: Int): List[SaveUpPoint] =
     if (months <= 0) Nil
     else {
-      val two = BigDecimal("0.02")
+      val two     = BigDecimal("0.02")
       val nominal = path(in.currentValue, in.monthlyContribution, in.expectedAnnualReturn, asOf, months)
       val up      = path(in.currentValue, in.monthlyContribution, in.expectedAnnualReturn + two, asOf, months)
       val down    = path(in.currentValue, in.monthlyContribution, (in.expectedAnnualReturn - two).max(0), asOf, months)
@@ -125,7 +140,14 @@ final case class FireInput(
     seed: Long
 )
 
-final case class FireYear(age: Int, start: BigDecimal, contribution: BigDecimal, growth: BigDecimal, withdrawal: BigDecimal, end: BigDecimal)
+final case class FireYear(
+    age: Int,
+    start: BigDecimal,
+    contribution: BigDecimal,
+    growth: BigDecimal,
+    withdrawal: BigDecimal,
+    end: BigDecimal
+)
 
 final case class FirePercentiles(age: Int, p10: BigDecimal, p50: BigDecimal, p90: BigDecimal)
 
@@ -153,8 +175,14 @@ object Fire {
     for {
       _ <- need(in.withdrawalRate > 0 && in.withdrawalRate < 1, "withdrawal rate must be between 0 and 1")
       _ <- need(in.annualExpenses > 0, "annual expenses must be positive")
-      _ <- need(in.currentAge >= 0 && in.horizonAge > in.currentAge && in.horizonAge <= 120, "horizon age must be after the current age (max 120)")
-      _ <- need(in.retirementAge.forall(a => a >= in.currentAge && a <= in.horizonAge), "retirement age must lie between the current and horizon ages")
+      _ <- need(
+        in.currentAge >= 0 && in.horizonAge > in.currentAge && in.horizonAge <= 120,
+        "horizon age must be after the current age (max 120)"
+      )
+      _ <- need(
+        in.retirementAge.forall(a => a >= in.currentAge && a <= in.horizonAge),
+        "retirement age must lie between the current and horizon ages"
+      )
       _ <- need(in.simulations >= 0 && in.simulations <= 20_000, "simulations must be between 0 and 20,000")
       _ <- need(in.returnVolatility >= 0, "volatility must not be negative")
     } yield ()
@@ -177,16 +205,25 @@ object Fire {
       simulatePath(in, retireAt, List.fill(years)(real + in.returnVolatility.toDouble * rng.nextGaussian()))
     }
     val success   = if (sims.isEmpty) BigDecimal(0) else BigDecimal(sims.count(_.lasted).toDouble / sims.size)
-    val reachedFi = if (sims.isEmpty) BigDecimal(0) else BigDecimal(sims.count(_.reachedFi(fireNumber.toDouble, retireAt - in.currentAge)).toDouble / sims.size)
+    val reachedFi = if (sims.isEmpty) BigDecimal(0)
+    else BigDecimal(sims.count(_.reachedFi(fireNumber.toDouble, retireAt - in.currentAge)).toDouble / sims.size)
     val pct = (0 until years).toList.map { i =>
-      val ends = sims.map(_.ends(i)).sorted
+      val ends         = sims.map(_.ends(i)).sorted
       def q(p: Double) = if (ends.isEmpty) BigDecimal(0) else money(ends(((ends.size - 1) * p).round.toInt))
       FirePercentiles(in.currentAge + i + 1, q(0.1), q(0.5), q(0.9))
     }
 
-    FireResult(fireNumber.setScale(2, RoundingMode.HALF_EVEN), realReturn(in.expectedReturn, in.inflation).setScale(6, RoundingMode.HALF_EVEN),
-               fiAge, fiAge.map(_ - in.currentAge), retireAt, projection,
-               success.setScale(4, RoundingMode.HALF_EVEN), reachedFi.setScale(4, RoundingMode.HALF_EVEN), pct)
+    FireResult(
+      fireNumber.setScale(2, RoundingMode.HALF_EVEN),
+      realReturn(in.expectedReturn, in.inflation).setScale(6, RoundingMode.HALF_EVEN),
+      fiAge,
+      fiAge.map(_ - in.currentAge),
+      retireAt,
+      projection,
+      success.setScale(4, RoundingMode.HALF_EVEN),
+      reachedFi.setScale(4, RoundingMode.HALF_EVEN),
+      pct
+    )
   }
 
   private final case class Path(years: List[FireYear], ends: Vector[Double], lasted: Boolean) {
@@ -204,7 +241,11 @@ object Fire {
         val withdrawal = if (retired) in.annualExpenses.toDouble else 0.0
         val growth     = bal * r
         val end        = (bal + growth + contrib - withdrawal).max(0.0)
-        (acc :+ FireYear(age, money(bal), money(contrib), money(growth), money(withdrawal), money(end)), end, ok && (!retired || bal + growth + contrib - withdrawal > 0))
+        (
+          acc :+ FireYear(age, money(bal), money(contrib), money(growth), money(withdrawal), money(end)),
+          end,
+          ok && (!retired || bal + growth + contrib - withdrawal > 0)
+        )
     }
     Path(rows.toList, rows.map(_.end.toDouble), lasted)
   }
@@ -212,7 +253,14 @@ object Fire {
 
 // ---------- Loans ----------
 
-final case class AmortizationRow(number: Int, date: LocalDate, payment: BigDecimal, interest: BigDecimal, principal: BigDecimal, balance: BigDecimal)
+final case class AmortizationRow(
+    number: Int,
+    date: LocalDate,
+    payment: BigDecimal,
+    interest: BigDecimal,
+    principal: BigDecimal,
+    balance: BigDecimal
+)
 
 /** Fixed-payment (annuity) amortisation with monthly payments one month apart from the anchor. */
 object Amortization {
@@ -228,7 +276,14 @@ object Amortization {
     }
 
   /** Remaining payments from a balance known on `anchor`, with the original contractual payment. */
-  def schedule(balance: BigDecimal, annualRate: BigDecimal, payment: BigDecimal, extra: BigDecimal, anchor: LocalDate, maxPayments: Int): List[AmortizationRow] = {
+  def schedule(
+      balance: BigDecimal,
+      annualRate: BigDecimal,
+      payment: BigDecimal,
+      extra: BigDecimal,
+      anchor: LocalDate,
+      maxPayments: Int
+  ): List[AmortizationRow] = {
     val r = annualRate / 12
     @scala.annotation.tailrec
     def loop(n: Int, bal: BigDecimal, acc: Vector[AmortizationRow]): List[AmortizationRow] =
@@ -244,13 +299,20 @@ object Amortization {
   }
 
   def forLiability(l: Liability): List[AmortizationRow] =
-    schedule(l.principal, l.annualRate, monthlyPayment(l.principal, l.annualRate, l.termMonths), l.extraMonthlyPayment, l.startDate, l.termMonths + 600)
+    schedule(
+      l.principal,
+      l.annualRate,
+      monthlyPayment(l.principal, l.annualRate, l.termMonths),
+      l.extraMonthlyPayment,
+      l.startDate,
+      l.termMonths + 600
+    )
 
   /** Balance on `date`: from the latest statement on or before it, else from origination. */
   def balanceOn(l: Liability, statements: List[LiabilityStatement], date: LocalDate): BigDecimal =
     if (date.isBefore(l.startDate)) BigDecimal(0)
     else {
-      val payment = monthlyPayment(l.principal, l.annualRate, l.termMonths)
+      val payment       = monthlyPayment(l.principal, l.annualRate, l.termMonths)
       val (anchor, bal) = statements.filter(!_.date.isAfter(date)).maxByOption(_.date)
         .fold((l.startDate, l.principal))(s => (s.date, s.balance))
       schedule(bal, l.annualRate, payment, l.extraMonthlyPayment, anchor, l.termMonths + 600)
@@ -272,11 +334,11 @@ object Depreciation {
   def value(purchasePrice: BigDecimal, purchased: LocalDate, cls: VehicleClass, pace: DepreciationPace, on: LocalDate): BigDecimal =
     if (!on.isAfter(purchased)) purchasePrice
     else {
-      val days      = ChronoUnit.DAYS.between(purchased, on).toDouble
-      val fullYears = (days / 365.25).toInt
-      val partial   = days / 365.25 - fullYears
+      val days            = ChronoUnit.DAYS.between(purchased, on).toDouble
+      val fullYears       = (days / 365.25).toInt
+      val partial         = days / 365.25 - fullYears
       def rate(year: Int) = cls.curve.lift(year).getOrElse(TailRatePct).toDouble / 100 * pace.multiplier.toDouble
-      val afterFull = (0 until fullYears).foldLeft(purchasePrice.toDouble)((v, y) => v * (1 - rate(y)).max(0))
+      val afterFull       = (0 until fullYears).foldLeft(purchasePrice.toDouble)((v, y) => v * (1 - rate(y)).max(0))
       BigDecimal(afterFull * (1 - rate(fullYears) * partial).max(0)).setScale(2, RoundingMode.HALF_EVEN)
     }
 }

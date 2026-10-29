@@ -10,6 +10,7 @@ import skunk.implicits.*
 /** Activities are user records: editable and deletable, unlike ledger entries. */
 trait Activities[F[_]] {
   def insert(a: Activity): F[Activity]
+
   /** Inserts rows whose `(account, import key)` is new; returns those inserted. */
   def insertImported(as: List[Activity]): F[List[Activity]]
   def replace(a: Activity): F[Option[Activity]]

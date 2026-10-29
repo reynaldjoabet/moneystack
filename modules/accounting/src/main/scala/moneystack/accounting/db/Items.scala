@@ -12,6 +12,7 @@ import java.util.UUID
 
 /** Item catalogue plus the inventory sub-ledger (stock positions, moves, adjustments). */
 trait Items[F[_]] {
+
   /** Inserts the item and, for inventory items, its zero stock position. */
   def create(i: Item): F[Item]
   def list(): F[List[Item]]
@@ -19,6 +20,7 @@ trait Items[F[_]] {
 
   /** Locks the positions in id order (so concurrent postings can't deadlock) and returns them. */
   def lockStock(s: Session[F], ids: List[ItemId]): F[Map[ItemId, Stock]]
+
   /** Records `move` and sets the position to `after`. */
   def move(s: Session[F], m: InventoryMove, after: Stock): F[Unit]
   def movesFor(s: Session[F], source: JournalSource, sourceId: UUID): F[List[InventoryMove]]
@@ -32,8 +34,10 @@ trait Items[F[_]] {
 
 object Items {
 
-  import Codecs.{inventoryAdjustment as adjustmentC, inventoryMove as moveC, item as itemC, itemId as itemIdC,
-                 journalSource as sourceC, stock as stockC}
+  import Codecs.{
+    inventoryAdjustment as adjustmentC, inventoryMove as moveC, item as itemC, itemId as itemIdC,
+    journalSource as sourceC, stock as stockC
+  }
   import skunk.codec.all.{bool, date, int4, uuid}
 
   def make[F[_]: Concurrent](pool: Resource[F, Session[F]]): Items[F] =

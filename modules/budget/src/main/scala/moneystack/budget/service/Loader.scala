@@ -24,9 +24,9 @@ final class Loader[F[_]: Async](wallets: Wallets[F], catalog: Catalog[F], transa
     for {
       own    <- wallets.owned(user)
       shared <- wallets.sharedWith(user)
-      ws      = (own ++ shared).filter(w => includeArchived || !w.archived)
-      txs    <- transactions.forWallets(ws.map(_.id))
-      cats   <- ws.map(_.ownerId).appended(user).distinct.flatTraverse(catalog.categories)
-      rates  <- catalog.rates()
+      ws = (own ++ shared).filter(w => includeArchived || !w.archived)
+      txs   <- transactions.forWallets(ws.map(_.id))
+      cats  <- ws.map(_.ownerId).appended(user).distinct.flatTraverse(catalog.categories)
+      rates <- catalog.rates()
     } yield Snapshot(ws, txs, cats, FxTable(rates))
 }

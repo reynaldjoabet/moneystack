@@ -49,53 +49,43 @@ object Codecs {
 
   // ---- ledger ----
 
-  val account: Codec[Account] =
-    (accountId *: accountCode *: title *: accountType *: currency *: accountId.opt *: bool *: instant).to[Account]
+  val account
+      : Codec[Account] = (accountId *: accountCode *: title *: accountType *: currency *: accountId.opt *: bool *: instant).to[Account]
 
   val journalHeader: Codec[JournalHeader] =
     (journalEntryId *: date *: journalRef.opt *: body.opt *: currency *: exchangeRate *:
       journalSource *: uuid.opt *: userId.opt *: instant).to[JournalHeader]
 
-  val postedLine: Codec[PostedLine] =
-    (int4 *: accountId *: side *: priceMinor *: amountMinor *: contactId.opt).to[PostedLine]
+  val postedLine: Codec[PostedLine] = (int4 *: accountId *: side *: priceMinor *: amountMinor *: contactId.opt).to[PostedLine]
 
-  val fxRate: Codec[FxRate] =
-    (currency *: date *: exchangeRate).to[FxRate]
+  val fxRate: Codec[FxRate] = (currency *: date *: exchangeRate).to[FxRate]
 
-  val accountTotals: Codec[AccountTotals] =
-    (accountId *: int8 *: int8).to[AccountTotals]
+  val accountTotals: Codec[AccountTotals] = (accountId *: int8 *: int8).to[AccountTotals]
 
-  val ledgerRow: Codec[LedgerRow] =
-    (journalEntryId *: date *: journalRef.opt *: body.opt *: accountId *: side *: amountMinor).to[LedgerRow]
+  val ledgerRow: Codec[LedgerRow] = (journalEntryId *: date *: journalRef.opt *: body.opt *: accountId *: side *: amountMinor).to[LedgerRow]
 
-  val ledgerLock: Codec[LedgerLock] =
-    (date *: date.opt *: date.opt *: body *: userId *: instant).to[LedgerLock]
+  val ledgerLock: Codec[LedgerLock] = (date *: date.opt *: date.opt *: body *: userId *: instant).to[LedgerLock]
 
   /** The single `ledger_lock` row; all-NULL columns mean the books are open. */
-  val ledgerLockRow: Decoder[Option[LedgerLock]] =
-    (date.opt *: date.opt *: date.opt *: body.opt *: userId.opt *: instant.opt).map {
-      case (Some(through), from, to, Some(reason), Some(by), Some(at)) =>
-        Some(LedgerLock(through, from, to, reason, by, at))
-      case _ => None
-    }
+  val ledgerLockRow: Decoder[Option[LedgerLock]] = (date.opt *: date.opt *: date.opt *: body.opt *: userId.opt *: instant.opt).map {
+    case (Some(through), from, to, Some(reason), Some(by), Some(at)) =>
+      Some(LedgerLock(through, from, to, reason, by, at))
+    case _ => None
+  }
 
   // ---- catalog ----
 
-  val contact: Codec[Contact] =
-    (contactId *: contactKind *: title *: email.opt *: currency *: userId.opt *: bool *: instant).to[Contact]
+  val contact: Codec[Contact] = (contactId *: contactKind *: title *: email.opt *: currency *: userId.opt *: bool *: instant).to[Contact]
 
-  val taxRate: Codec[TaxRate] =
-    (taxRateId *: taxCode *: title *: bps *: bool *: instant).to[TaxRate]
+  val taxRate: Codec[TaxRate] = (taxRateId *: taxCode *: title *: bps *: bool *: instant).to[TaxRate]
 
   val item: Codec[Item] =
     (itemId *: sku *: title *: itemKind *: priceMinor.opt *: priceMinor.opt *: accountId *: accountId *:
       accountId.opt *: bool *: instant).to[Item]
 
-  val stock: Codec[Stock] =
-    (itemId *: decimal *: int8).to[Stock]
+  val stock: Codec[Stock] = (itemId *: decimal *: int8).to[Stock]
 
-  val inventoryMove: Codec[InventoryMove] =
-    (itemId *: date *: decimal *: int8 *: journalSource *: uuid).to[InventoryMove]
+  val inventoryMove: Codec[InventoryMove] = (itemId *: date *: decimal *: int8 *: journalSource *: uuid).to[InventoryMove]
 
   val inventoryAdjustment: Codec[InventoryAdjustment] =
     (adjustmentId *: itemId *: date *: decimal *: int8 *: accountId *: body *: journalEntryId *:
@@ -117,11 +107,10 @@ object Codecs {
       journalRef.opt *: body.opt *: priceMinor *: journalEntryId *: journalEntryId.opt *: date.opt *:
       userId.opt *: instant).to[Settlement]
 
-  val allocation: Codec[Allocation] =
-    (documentId *: priceMinor *: amountMinor *: amountMinor).to[Allocation]
+  val allocation: Codec[Allocation] = (documentId *: priceMinor *: amountMinor *: amountMinor).to[Allocation]
 
-  val openItem: Codec[OpenItem] =
-    (documentId *: varchar(32) *: contactId *: date *: date *: currency *: int8 *: int8 *: int8 *: int8).to[OpenItem]
+  val openItem
+      : Codec[OpenItem] = (documentId *: varchar(32) *: contactId *: date *: date *: currency *: int8 *: int8 *: int8 *: int8).to[OpenItem]
 
   // ---- banking ----
 
@@ -129,8 +118,7 @@ object Codecs {
     (bankTransactionId *: accountId *: date *: title *: int8 *: varchar(128).opt *: bankTxStatus *:
       bankRuleId.opt *: accountId.opt *: contactId.opt *: journalEntryId.opt *: uuid.opt *: instant).to[BankTransaction]
 
-  val ruleCondition: Codec[RuleCondition] =
-    (ruleField *: ruleOperator *: varchar(200)).to[RuleCondition]
+  val ruleCondition: Codec[RuleCondition] = (ruleField *: ruleOperator *: varchar(200)).to[RuleCondition]
 
   /** A rule without its conditions, which live in `bank_rule_conditions`. */
   val bankRule: Codec[BankRule] =
@@ -147,15 +135,13 @@ object Codecs {
   val recurringId: Codec[RecurringId]           = uuid.imap(RecurringId.assume)(_.value)
   val reconciliationId: Codec[ReconciliationId] = uuid.imap(ReconciliationId.assume)(_.value)
 
-  val eventKind: Codec[DocumentEventKind]   = varchar(16).eimap(DocumentEventKind.parse)(DocumentEventKind.render)
-  val every: Codec[Every]                   = varchar(8).eimap(Every.parse)(Every.render)
+  val eventKind: Codec[DocumentEventKind]      = varchar(16).eimap(DocumentEventKind.parse)(DocumentEventKind.render)
+  val every: Codec[Every]                      = varchar(8).eimap(Every.parse)(Every.render)
   val reconStatus: Codec[ReconciliationStatus] = varchar(8).eimap(ReconciliationStatus.parse)(ReconciliationStatus.render)
 
-  val draft: Codec[Draft] =
-    (draftId *: documentKind *: contactId *: text *: userId *: instant *: instant).to[Draft]
+  val draft: Codec[Draft] = (draftId *: documentKind *: contactId *: text *: userId *: instant *: instant).to[Draft]
 
-  val documentEvent: Codec[DocumentEvent] =
-    (documentId *: eventKind *: body.opt *: userId.opt *: instant).to[DocumentEvent]
+  val documentEvent: Codec[DocumentEvent] = (documentId *: eventKind *: body.opt *: userId.opt *: instant).to[DocumentEvent]
 
   val recurring: Codec[Recurring] =
     (recurringId *: documentKind *: contactId *: text *: every *: int4 *: date *: date.opt *: int4.opt *: int4 *: bool *:

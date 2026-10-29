@@ -93,7 +93,13 @@ object FinancialReports {
     TrialBalance(asOf, currency, rows, minor(rows.map(_.debitMinor.value: Long).sum), minor(rows.map(_.creditMinor.value: Long).sum))
   }
 
-  def profitAndLoss(from: LocalDate, to: LocalDate, currency: CurrencyCode, accounts: List[Account], totals: List[AccountTotals]): ProfitAndLoss = {
+  def profitAndLoss(
+      from: LocalDate,
+      to: LocalDate,
+      currency: CurrencyCode,
+      accounts: List[Account],
+      totals: List[AccountTotals]
+  ): ProfitAndLoss = {
     val s           = sectionOf(accounts, totals)
     val income      = s(Set(AccountType.Income))
     val costOfSales = s(Set(AccountType.CostOfSales))
@@ -103,8 +109,19 @@ object FinancialReports {
     val gross       = income.totalMinor.value - costOfSales.totalMinor.value
     val operating   = gross - expenses.totalMinor.value
     val net         = operating + otherIncome.totalMinor.value - otherExp.totalMinor.value
-    ProfitAndLoss(from, to, currency, income, costOfSales, minor(gross), expenses, minor(operating),
-                  otherIncome, otherExp, minor(net))
+    ProfitAndLoss(
+      from,
+      to,
+      currency,
+      income,
+      costOfSales,
+      minor(gross),
+      expenses,
+      minor(operating),
+      otherIncome,
+      otherExp,
+      minor(net)
+    )
   }
 
   /**
@@ -127,9 +144,21 @@ object FinancialReports {
     val totalLiabilities = sum(currentLiabilities, longTermLiabilities)
     val totalEquity      = equity.totalMinor.value + retained
 
-    BalanceSheet(asOf, currency, currentAssets, fixedAssets, nonCurrentAssets, minor(totalAssets),
-                 currentLiabilities, longTermLiabilities, minor(totalLiabilities),
-                 equity, minor(retained), minor(totalEquity), minor(totalLiabilities + totalEquity))
+    BalanceSheet(
+      asOf,
+      currency,
+      currentAssets,
+      fixedAssets,
+      nonCurrentAssets,
+      minor(totalAssets),
+      currentLiabilities,
+      longTermLiabilities,
+      minor(totalLiabilities),
+      equity,
+      minor(retained),
+      minor(totalEquity),
+      minor(totalLiabilities + totalEquity)
+    )
   }
 
   /**
@@ -153,9 +182,9 @@ object FinancialReports {
       if (open == 0L && lines.isEmpty) None
       else {
         val (closing, out) = lines.foldLeft((open, Vector.empty[GeneralLedgerLine])) { case ((bal, acc), r) =>
-          val amount       = r.baseAmountMinor.value: Long
-          val (dr, cr)     = if (r.side == Side.Debit) (amount, 0L) else (0L, amount)
-          val next         = bal + Ledger.balance(a.accountType, dr, cr)
+          val amount   = r.baseAmountMinor.value: Long
+          val (dr, cr) = if (r.side == Side.Debit) (amount, 0L) else (0L, amount)
+          val next     = bal + Ledger.balance(a.accountType, dr, cr)
           (next, acc :+ GeneralLedgerLine(r.entryId, r.date, r.reference, r.memo, minor(dr), minor(cr), minor(next)))
         }
         Some(GeneralLedgerAccount(a.id, a.code, a.name, minor(open), out.toList, minor(closing)))

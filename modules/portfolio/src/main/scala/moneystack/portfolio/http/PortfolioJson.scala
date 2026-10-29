@@ -26,34 +26,34 @@ object PortfolioJson {
   given Codec[RebalanceMode]    = enumCodec(RebalanceMode.render, RebalanceMode.parse)
 
   // ---- entities ----
-  given Encoder[InvestmentAccount]  = deriveEncoder
-  given Codec[BalanceSnapshot]      = deriveCodec
-  given Encoder[Asset]              = deriveEncoder
-  given Encoder[Classification]     = deriveEncoder
-  given Codec[Quote]                = deriveCodec
-  given Codec[FxRate]               = deriveCodec
-  given Encoder[Activity]           = deriveEncoder
-  given Encoder[AllocationTarget]   = deriveEncoder
-  given Encoder[ContributionLimit]  = deriveEncoder
-  given Codec[GoalFunding]          = deriveCodec
-  given Encoder[Goal]               = deriveEncoder
-  given Encoder[AltAsset]           = deriveEncoder
-  given Codec[AltValuation]         = deriveCodec
-  given Encoder[Liability]          = deriveEncoder
-  given Codec[LiabilityStatement]   = deriveCodec
+  given Encoder[InvestmentAccount] = deriveEncoder
+  given Codec[BalanceSnapshot]     = deriveCodec
+  given Encoder[Asset]             = deriveEncoder
+  given Encoder[Classification]    = deriveEncoder
+  given Codec[Quote]               = deriveCodec
+  given Codec[FxRate]              = deriveCodec
+  given Encoder[Activity]          = deriveEncoder
+  given Encoder[AllocationTarget]  = deriveEncoder
+  given Encoder[ContributionLimit] = deriveEncoder
+  given Codec[GoalFunding]         = deriveCodec
+  given Encoder[Goal]              = deriveEncoder
+  given Encoder[AltAsset]          = deriveEncoder
+  given Codec[AltValuation]        = deriveCodec
+  given Encoder[Liability]         = deriveEncoder
+  given Codec[LiabilityStatement]  = deriveCodec
 
   // ---- read models ----
-  given Encoder[HoldingView]                   = deriveEncoder
-  given Encoder[PortfolioService.Holdings]     = deriveEncoder
-  given Encoder[DailyValue]                    = deriveEncoder
-  given Encoder[Returns]                       = deriveEncoder
-  given Encoder[ReturnPoint]                   = deriveEncoder
+  given Encoder[HoldingView]                        = deriveEncoder
+  given Encoder[PortfolioService.Holdings]          = deriveEncoder
+  given Encoder[DailyValue]                         = deriveEncoder
+  given Encoder[Returns]                            = deriveEncoder
+  given Encoder[ReturnPoint]                        = deriveEncoder
   given Encoder[PortfolioService.PerformanceReport] = deriveEncoder
-  given Encoder[Disposal] = Encoder.instance { d =>
+  given Encoder[Disposal]                           = Encoder.instance { d =>
     deriveEncoder[Disposal].apply(d).deepMerge(Json.obj("realized" -> d.realized.asJson, "realizedBase" -> d.realizedBase.asJson))
   }
   given Encoder[PortfolioService.RealizedReport] = deriveEncoder
-  given Encoder[IncomeSummary] = Encoder.instance { s =>
+  given Encoder[IncomeSummary]                   = Encoder.instance { s =>
     Json.obj(
       "total"                -> s.total.asJson,
       "dividends"            -> s.dividends.asJson,
@@ -63,15 +63,20 @@ object PortfolioJson {
       "byAsset"              -> s.byAsset.map { case (a, v) => Json.obj("assetId" -> a.asJson, "amount" -> v.asJson) }.asJson
     )
   }
-  given Encoder[Slice]        = deriveEncoder
-  given Encoder[DriftRow]     = deriveEncoder
-  given Encoder[RebalanceRow] = deriveEncoder
-  given Encoder[LimitProgress] = deriveEncoder
+  given Encoder[Slice]                         = deriveEncoder
+  given Encoder[DriftRow]                      = deriveEncoder
+  given Encoder[RebalanceRow]                  = deriveEncoder
+  given Encoder[LimitProgress]                 = deriveEncoder
   given Encoder[PortfolioService.ImportReport] = deriveEncoder
 
   given Encoder[SaveUpPoint] = Encoder.instance { p =>
-    Json.obj("month" -> p.month.toString.asJson, "nominal" -> p.nominal.asJson, "optimistic" -> p.optimistic.asJson,
-             "pessimistic" -> p.pessimistic.asJson, "target" -> p.target.asJson)
+    Json.obj(
+      "month"       -> p.month.toString.asJson,
+      "nominal"     -> p.nominal.asJson,
+      "optimistic"  -> p.optimistic.asJson,
+      "pessimistic" -> p.pessimistic.asJson,
+      "target"      -> p.target.asJson
+    )
   }
   given Encoder[SaveUpOverview]               = deriveEncoder
   given Encoder[PlanningService.GoalProgress] = deriveEncoder
@@ -126,10 +131,18 @@ object PortfolioJson {
       seed: Option[Long]
   ) {
     def input: FireInput = FireInput(
-      currentPortfolio, annualExpenses, annualSavings,
-      expectedReturn.getOrElse(BigDecimal("0.07")), returnVolatility.getOrElse(BigDecimal("0.15")),
-      inflation.getOrElse(BigDecimal("0.025")), withdrawalRate.getOrElse(BigDecimal("0.04")),
-      currentAge, retirementAge, horizonAge.getOrElse(90), simulations.getOrElse(1000), seed.getOrElse(42L)
+      currentPortfolio,
+      annualExpenses,
+      annualSavings,
+      expectedReturn.getOrElse(BigDecimal("0.07")),
+      returnVolatility.getOrElse(BigDecimal("0.15")),
+      inflation.getOrElse(BigDecimal("0.025")),
+      withdrawalRate.getOrElse(BigDecimal("0.04")),
+      currentAge,
+      retirementAge,
+      horizonAge.getOrElse(90),
+      simulations.getOrElse(1000),
+      seed.getOrElse(42L)
     )
   }
   given Decoder[FireBody] = deriveDecoder

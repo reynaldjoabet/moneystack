@@ -7,9 +7,9 @@ import java.util.UUID
 
 class EngineSuite extends munit.FunSuite {
 
-  private val usd  = CurrencyCode.USD
-  private val eur  = CurrencyCode.EUR
-  private val acct = InvestmentAccountId.assume(UUID.randomUUID())
+  private val usd   = CurrencyCode.USD
+  private val eur   = CurrencyCode.EUR
+  private val acct  = InvestmentAccountId.assume(UUID.randomUUID())
   private val other = InvestmentAccountId.assume(UUID.randomUUID())
 
   private def asset(sym: String, ccy: CurrencyCode) =
@@ -22,13 +22,36 @@ class EngineSuite extends munit.FunSuite {
     Engine.Context(List(aapl, sap).map(a => a.id -> a).toMap, PriceTable(quotes), FxTable(fx), usd)
 
   private var seq = 0L
-  private def act(kind: ActivityType, day: Int, asset: Option[Asset] = None, qty: String = null, price: String = null,
-                  amount: String = null, fee: String = "0", ccy: CurrencyCode = usd, external: Boolean = false,
-                  counter: Option[InvestmentAccountId] = None): Activity = {
+  private def act(
+      kind: ActivityType,
+      day: Int,
+      asset: Option[Asset] = None,
+      qty: String = null,
+      price: String = null,
+      amount: String = null,
+      fee: String = "0",
+      ccy: CurrencyCode = usd,
+      external: Boolean = false,
+      counter: Option[InvestmentAccountId] = None
+  ): Activity = {
     seq += 1
-    Activity(ActivityId.assume(UUID.randomUUID()), acct, asset.map(_.id), kind, LocalDate.of(2026, 1, day),
-             Option(qty).map(BigDecimal(_)), Option(price).map(BigDecimal(_)), Option(amount).map(BigDecimal(_)), BigDecimal(fee),
-             asset.fold(ccy)(_.currency), external, counter, None, None, Instant.EPOCH.plusSeconds(seq))
+    Activity(
+      ActivityId.assume(UUID.randomUUID()),
+      acct,
+      asset.map(_.id),
+      kind,
+      LocalDate.of(2026, 1, day),
+      Option(qty).map(BigDecimal(_)),
+      Option(price).map(BigDecimal(_)),
+      Option(amount).map(BigDecimal(_)),
+      BigDecimal(fee),
+      asset.fold(ccy)(_.currency),
+      external,
+      counter,
+      None,
+      None,
+      Instant.EPOCH.plusSeconds(seq)
+    )
   }
 
   private def replay(as: Activity*)(using c: Engine.Context = ctx()) = Engine.replay(acct, as.toList, c)
@@ -43,7 +66,7 @@ class EngineSuite extends munit.FunSuite {
 
     val pos = book.positions(aapl.id)
     assertEquals(pos.quantity, BigDecimal(5))
-    assertEquals(pos.cost, BigDecimal(600))                     // half of the 1,200 lot remains
+    assertEquals(pos.cost, BigDecimal(600)) // half of the 1,200 lot remains
     assertEquals(book.cash(usd), BigDecimal(10000 - 1005 - 1200 + 2250 - 3))
     val realized = book.disposals.map(_.realized).sum
     assertEquals(realized, BigDecimal(2247) - BigDecimal(1005) - BigDecimal(600))
@@ -68,14 +91,18 @@ class EngineSuite extends munit.FunSuite {
   }
 
   test("foreign lots carry base cost at the acquisition-date rate") {
-    given Engine.Context = ctx(fx = List(FxRate(eur, usd, LocalDate.of(2026, 1, 1), BigDecimal("1.10")),
-                                         FxRate(eur, usd, LocalDate.of(2026, 1, 10), BigDecimal("1.20"))))
+    given Engine.Context = ctx(fx =
+      List(
+        FxRate(eur, usd, LocalDate.of(2026, 1, 1), BigDecimal("1.10")),
+        FxRate(eur, usd, LocalDate.of(2026, 1, 10), BigDecimal("1.20"))
+      )
+    )
     val book = replay(act(ActivityType.Buy, 5, Some(sap), "10", "100"), act(ActivityType.Sell, 15, Some(sap), "10", "100")).toOption.get
-    val d = book.disposals.head
+    val d    = book.disposals.head
     assertEquals(d.costBase, BigDecimal(1100))
     assertEquals(d.proceedsBase, BigDecimal(1200))
     assertEquals(d.realized, BigDecimal(0))
-    assertEquals(d.realizedBase, BigDecimal(100))            // a pure currency gain
+    assertEquals(d.realizedBase, BigDecimal(100)) // a pure currency gain
   }
 
   test("a missing FX rate is an error, not a silent zero") {
@@ -93,7 +120,7 @@ class EngineSuite extends munit.FunSuite {
     ).toOption.get
     assertEquals(book.cash(usd), BigDecimal(1000 + 30 + 5 - 2 - 4 + 10))
     assertEquals(book.income.map(_.amount).sum, BigDecimal(35))
-    assertEquals(book.netContribution, BigDecimal(1000))       // the credit is a rebate, not a contribution
+    assertEquals(book.netContribution, BigDecimal(1000)) // the credit is a rebate, not a contribution
   }
 
   test("transfers to a known account are internal; external ones are contributions") {

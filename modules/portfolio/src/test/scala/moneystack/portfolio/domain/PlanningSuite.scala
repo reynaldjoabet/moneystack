@@ -21,21 +21,39 @@ class PlanningSuite extends munit.FunSuite {
 
   test("save-up health: at risk within 90% of target, off track below") {
     def health(monthly: Int) =
-      SaveUp.overview(SaveUpInput(BigDecimal(0), BigDecimal(1000), Some(LocalDate.of(2026, 11, 15)), BigDecimal(monthly), BigDecimal(0)), asOf).health
+      SaveUp.overview(
+        SaveUpInput(BigDecimal(0), BigDecimal(1000), Some(LocalDate.of(2026, 11, 15)), BigDecimal(monthly), BigDecimal(0)),
+        asOf
+      ).health
     assertEquals(health(100), "on_track")
     assertEquals(health(92), "at_risk")
     assertEquals(health(50), "off_track")
   }
 
   test("save-up scenarios bracket the nominal path") {
-    val o = SaveUp.overview(SaveUpInput(BigDecimal(10000), BigDecimal(50000), Some(LocalDate.of(2031, 1, 1)), BigDecimal(300), BigDecimal("0.06")), asOf)
+    val o = SaveUp.overview(
+      SaveUpInput(BigDecimal(10000), BigDecimal(50000), Some(LocalDate.of(2031, 1, 1)), BigDecimal(300), BigDecimal("0.06")),
+      asOf
+    )
     val last = o.trajectory.last
     assert(last.pessimistic < last.nominal && last.nominal < last.optimistic)
     assert(o.projectedAtTargetDate.get > BigDecimal(10000 + 300 * 59))
   }
 
-  private val fire = FireInput(BigDecimal(500_000), BigDecimal(40_000), BigDecimal(100_000), BigDecimal("0.025"), BigDecimal(0),
-                               BigDecimal("0.025"), BigDecimal("0.04"), 40, None, 90, 200, 7L)
+  private val fire = FireInput(
+    BigDecimal(500_000),
+    BigDecimal(40_000),
+    BigDecimal(100_000),
+    BigDecimal("0.025"),
+    BigDecimal(0),
+    BigDecimal("0.025"),
+    BigDecimal("0.04"),
+    40,
+    None,
+    90,
+    200,
+    7L
+  )
 
   test("FIRE: the FI number is expenses over the withdrawal rate; zero real return makes it arithmetic") {
     val r = Fire.run(fire.copy(horizonAge = 69))
@@ -50,7 +68,7 @@ class PlanningSuite extends munit.FunSuite {
 
   test("FIRE: volatility spreads outcomes and the seed makes them repeatable") {
     val noisy = fire.copy(expectedReturn = BigDecimal("0.07"), returnVolatility = BigDecimal("0.18"))
-    val a = Fire.run(noisy); val b = Fire.run(noisy)
+    val a     = Fire.run(noisy); val b = Fire.run(noisy)
     assertEquals(a.successRate, b.successRate)
     val last = a.percentiles.last
     assert(last.p10 <= last.p50 && last.p50 <= last.p90)
@@ -58,8 +76,21 @@ class PlanningSuite extends munit.FunSuite {
   }
 
   private def loan(rate: String, months: Int, extra: Int = 0) =
-    Liability(LiabilityId.assume(UUID.randomUUID()), UserId.assume(UUID.randomUUID()), LiabilityKind.Mortgage, Title.applyUnsafe("Home"),
-              CurrencyCode.USD, BigDecimal(100_000), BigDecimal(rate), months, LocalDate.of(2026, 1, 1), BigDecimal(extra), None, true, Instant.EPOCH)
+    Liability(
+      LiabilityId.assume(UUID.randomUUID()),
+      UserId.assume(UUID.randomUUID()),
+      LiabilityKind.Mortgage,
+      Title.applyUnsafe("Home"),
+      CurrencyCode.USD,
+      BigDecimal(100_000),
+      BigDecimal(rate),
+      months,
+      LocalDate.of(2026, 1, 1),
+      BigDecimal(extra),
+      None,
+      true,
+      Instant.EPOCH
+    )
 
   test("annuity payment and a schedule that pays off on time") {
     val l = loan("0.06", 360)

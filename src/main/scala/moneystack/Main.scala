@@ -33,49 +33,59 @@ object Main extends IOApp.Simple {
         cfg <- Resource.eval(AppConfig.load[IO])
 
         pool <- {
-                  val base = Session.Builder[IO]
-                    .withHost(cfg.db.host)
-                    .withPort(cfg.db.port)
-                    .withDatabase(cfg.db.database)
-                  cfg.db.password
-                    .fold(base.withUser(cfg.db.user))(base.withUserAndPassword(cfg.db.user, _))
-                    .pooled(cfg.db.poolMax)
-                }
+          val base = Session.Builder[IO]
+            .withHost(cfg.db.host)
+            .withPort(cfg.db.port)
+            .withDatabase(cfg.db.database)
+          cfg.db.password
+            .fold(base.withUser(cfg.db.user))(base.withUserAndPassword(cfg.db.user, _))
+            .pooled(cfg.db.poolMax)
+        }
 
         // ---- repositories ----
-        usersR    = Users.make[IO](pool)
-        portR     = Portfolios.make[IO](pool)
-        holdR     = Holdings.make[IO](pool)
-        recsR     = Recommendations.make[IO](pool)
-        subsR     = Subscriptions.make[IO](pool)
+        usersR = Users.make[IO](pool)
+        portR  = Portfolios.make[IO](pool)
+        holdR  = Holdings.make[IO](pool)
+        recsR  = Recommendations.make[IO](pool)
+        subsR  = Subscriptions.make[IO](pool)
 
         // ---- external sandboxes ----
-        market    <- Resource.eval(SandboxMarketData.make[IO](Map.empty))
-        gateway   <- Resource.eval(PaymentGateway.sandbox[IO])
-        crm       <- Resource.eval(Crm.sandbox[IO])
-        tax       <- Resource.eval(Tax.sandbox[IO])
-        telegram  <- Resource.eval(Telegram.sandbox[IO](msg => logger.info(msg)))
-        push      <- Resource.eval(Push.sandbox[IO](msg => logger.info(msg)))
-        errors    <- Resource.eval(ErrorMonitoring.sandbox[IO])
-        support   <- Resource.eval(SupportSink.sandbox[IO])
+        market   <- Resource.eval(SandboxMarketData.make[IO](Map.empty))
+        gateway  <- Resource.eval(PaymentGateway.sandbox[IO])
+        crm      <- Resource.eval(Crm.sandbox[IO])
+        tax      <- Resource.eval(Tax.sandbox[IO])
+        telegram <- Resource.eval(Telegram.sandbox[IO](msg => logger.info(msg)))
+        push     <- Resource.eval(Push.sandbox[IO](msg => logger.info(msg)))
+        errors   <- Resource.eval(ErrorMonitoring.sandbox[IO])
+        support  <- Resource.eval(SupportSink.sandbox[IO])
 
         // ---- services ----
-        books             = AccountingModule.make[IO](pool, cfg.ledger.baseCurrency)
-        _                 <- Resource.eval(books.bootstrap)
+        books = AccountingModule.make[IO](pool, cfg.ledger.baseCurrency)
+        _ <- Resource.eval(books.bootstrap)
         accounting        = LedgerAccounting.make[IO](usersR, books)
-        portfolioBook        = PortfolioModule.make[IO](pool, cfg.ledger.baseCurrency)
+        portfolioBook     = PortfolioModule.make[IO](pool, cfg.ledger.baseCurrency)
         budgetBook        = BudgetModule.make[IO](pool, cfg.ledger.baseCurrency)
         portfolioSvc      = PortfolioService.make[IO](portR, holdR, market)
         recommendationSvc = RecommendationService.make[IO](recsR, portR, usersR, telegram, push)
         subscriptionSvc   = SubscriptionService.make[IO](usersR, subsR, gateway, crm, accounting)
 
         // ---- HTTP ----
-        routes = new Routes[IO](usersR, portR, holdR, recsR, subsR, market,
-                                 portfolioSvc, recommendationSvc, subscriptionSvc).routes <+>
-                 books.routes(Principal.withRole[IO](usersR, Role.Accountant)) <+>
-                 portfolioBook.routes(Principal.known[IO](usersR)) <+>
-                 budgetBook.routes(Principal.known[IO](usersR))
-        app    = Logger.httpApp(logHeaders = true, logBody = false)(routes.orNotFound)
+        routes =
+          new Routes[IO](
+            usersR,
+            portR,
+            holdR,
+            recsR,
+            subsR,
+            market,
+            portfolioSvc,
+            recommendationSvc,
+            subscriptionSvc
+          ).routes <+>
+            books.routes(Principal.withRole[IO](usersR, Role.Accountant)) <+>
+            portfolioBook.routes(Principal.known[IO](usersR)) <+>
+            budgetBook.routes(Principal.known[IO](usersR))
+        app = Logger.httpApp(logHeaders = true, logBody = false)(routes.orNotFound)
 
         host <- Resource.eval(IO.fromOption(Host.fromString(cfg.http.host))(new IllegalArgumentException("bad host")))
         port <- Resource.eval(IO.fromOption(Port.fromInt(cfg.http.port))(new IllegalArgumentException("bad port")))

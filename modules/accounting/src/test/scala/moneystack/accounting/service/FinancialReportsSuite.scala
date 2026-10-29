@@ -13,8 +13,16 @@ class FinancialReportsSuite extends munit.FunSuite {
   private val dec = LocalDate.of(2026, 12, 31)
 
   private def account(code: String, t: AccountType): Account =
-    Account(AccountId.assume(UUID.randomUUID()), AccountCode.applyUnsafe(code), Title.applyUnsafe(s"acct $code"),
-            t, usd, None, active = true, Instant.EPOCH)
+    Account(
+      AccountId.assume(UUID.randomUUID()),
+      AccountCode.applyUnsafe(code),
+      Title.applyUnsafe(s"acct $code"),
+      t,
+      usd,
+      None,
+      active = true,
+      Instant.EPOCH
+    )
 
   private val cash     = account("1000", AccountType.Cash)
   private val ar       = account("1100", AccountType.AccountsReceivable)
@@ -33,16 +41,16 @@ class FinancialReportsSuite extends munit.FunSuite {
 
   /** A small, balanced year: (debit account, credit account, amount). */
   private val postings = List(
-    (cash, capital, 50_000L),    // owner invests
-    (cash, loan, 20_000L),       // borrow
-    (laptop, payable, 3_000L),   // buy equipment on credit
-    (cash, revenue, 12_000L),    // cash sales
-    (ar, revenue, 4_000L),       // sales on account
-    (fees, cash, 600L),          // processing fees
-    (rent, cash, 9_000L),        // rent
-    (cash, interest, 150L),      // interest earned
-    (fxLoss, cash, 50L),         // fx loss
-    (payable, cash, 1_000L)      // pay down supplier
+    (cash, capital, 50_000L),  // owner invests
+    (cash, loan, 20_000L),     // borrow
+    (laptop, payable, 3_000L), // buy equipment on credit
+    (cash, revenue, 12_000L),  // cash sales
+    (ar, revenue, 4_000L),     // sales on account
+    (fees, cash, 600L),        // processing fees
+    (rent, cash, 9_000L),      // rent
+    (cash, interest, 150L),    // interest earned
+    (fxLoss, cash, 50L),       // fx loss
+    (payable, cash, 1_000L)    // pay down supplier
   )
 
   private val totals: List[AccountTotals] = {
@@ -86,7 +94,7 @@ class FinancialReportsSuite extends munit.FunSuite {
   }
 
   test("general ledger carries opening balance and running totals") {
-    val entry = JournalEntryId.assume(UUID.randomUUID())
+    val entry                                = JournalEntryId.assume(UUID.randomUUID())
     def row(side: Side, amt: Long, day: Int) =
       LedgerRow(entry, LocalDate.of(2026, 2, day), None, None, cash.id, side, AmountMinor.assume(amt))
 

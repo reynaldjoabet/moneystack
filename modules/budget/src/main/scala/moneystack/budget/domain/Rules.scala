@@ -40,20 +40,20 @@ object NoteMode extends Keyed[NoteMode] { def key(a: NoteMode) = a.key }
 /** Text tests are case-insensitive; amounts are minor units of the transaction's currency. */
 sealed trait Condition
 object Condition {
-  final case class Text(field: TextField, op: TextOp, values: List[String])       extends Condition
-  final case class Payee(in: Boolean, ids: List[PayeeId])                         extends Condition
-  final case class Amount(op: AmountOp, min: Option[Long], max: Option[Long])     extends Condition
-  final case class Kind(kind: TxKind)                                             extends Condition
-  final case class Wallet(in: Boolean, ids: List[WalletId])                       extends Condition
-  final case class DayOfMonth(min: Int, max: Int)                                 extends Condition
+  final case class Text(field: TextField, op: TextOp, values: List[String])   extends Condition
+  final case class Payee(in: Boolean, ids: List[PayeeId])                     extends Condition
+  final case class Amount(op: AmountOp, min: Option[Long], max: Option[Long]) extends Condition
+  final case class Kind(kind: TxKind)                                         extends Condition
+  final case class Wallet(in: Boolean, ids: List[WalletId])                   extends Condition
+  final case class DayOfMonth(min: Int, max: Int)                             extends Condition
 }
 
 sealed trait Action
 object Action {
-  final case class SetCategory(categoryId: CategoryId)     extends Action
-  final case class AddTags(tagIds: List[TagId])            extends Action
-  final case class SetPayee(payeeId: PayeeId)              extends Action
-  final case class SetNote(mode: NoteMode, value: String)  extends Action
+  final case class SetCategory(categoryId: CategoryId)    extends Action
+  final case class AddTags(tagIds: List[TagId])           extends Action
+  final case class SetPayee(payeeId: PayeeId)             extends Action
+  final case class SetNote(mode: NoteMode, value: String) extends Action
 }
 
 /** Rules run in `position` order; with `matchAll` every condition must hold, otherwise any. */
@@ -78,15 +78,18 @@ object Rules {
 
   def validate(conditions: List[Condition], actions: List[Action]): Either[BudgetError, Unit] = {
     def bad(msg: String) = Left(BudgetError.Invalid(msg))
-    val conditionErrors = conditions.collectFirst {
-      case Condition.Text(_, op, vs) if op != TextOp.IsEmpty && (vs.isEmpty || vs.exists(_.trim.isEmpty)) => "text conditions need non-blank keywords"
-      case Condition.Text(_, _, vs) if vs.size > MaxKeywords || vs.exists(_.length > 64)                 => s"at most $MaxKeywords keywords of 64 characters"
-      case Condition.Amount(AmountOp.Between, min, max) if min.isEmpty || max.isEmpty || min.exists(m => max.exists(m > _)) => "between needs min <= max"
-      case Condition.Amount(AmountOp.Gte | AmountOp.Equals, None, _)                                    => "gte and equals need min"
-      case Condition.Amount(AmountOp.Lte, _, None)                                                      => "lte needs max"
-      case Condition.DayOfMonth(min, max) if min < 1 || max > 31 || min > max                           => "day of month must be within 1-31, min <= max"
-      case Condition.Payee(_, ids) if ids.isEmpty                                                       => "payee conditions need ids"
-      case Condition.Wallet(_, ids) if ids.isEmpty                                                      => "wallet conditions need ids"
+    val conditionErrors  = conditions.collectFirst {
+      case Condition.Text(_, op, vs) if op != TextOp.IsEmpty && (vs.isEmpty || vs.exists(_.trim.isEmpty)) =>
+        "text conditions need non-blank keywords"
+      case Condition.Text(_, _, vs) if vs.size > MaxKeywords || vs.exists(_.length > 64) =>
+        s"at most $MaxKeywords keywords of 64 characters"
+      case Condition.Amount(AmountOp.Between, min, max) if min.isEmpty || max.isEmpty || min.exists(m => max.exists(m > _)) =>
+        "between needs min <= max"
+      case Condition.Amount(AmountOp.Gte | AmountOp.Equals, None, _)          => "gte and equals need min"
+      case Condition.Amount(AmountOp.Lte, _, None)                            => "lte needs max"
+      case Condition.DayOfMonth(min, max) if min < 1 || max > 31 || min > max => "day of month must be within 1-31, min <= max"
+      case Condition.Payee(_, ids) if ids.isEmpty                             => "payee conditions need ids"
+      case Condition.Wallet(_, ids) if ids.isEmpty                            => "wallet conditions need ids"
     }
     if (conditions.isEmpty) bad("a rule needs at least one condition")
     else if (conditions.size > MaxConditions) bad(s"at most $MaxConditions conditions")
@@ -114,7 +117,7 @@ object Rules {
         case TextOp.EqualsAny      => vs.contains(text)
         case TextOp.IsEmpty        => text.trim.isEmpty
       }
-    case Condition.Payee(in, ids)  => tx.payeeId.exists(ids.contains) == in
+    case Condition.Payee(in, ids)       => tx.payeeId.exists(ids.contains) == in
     case Condition.Amount(op, min, max) =>
       val a = tx.amountMinor
       op match {
@@ -123,8 +126,8 @@ object Rules {
         case AmountOp.Between => min.exists(a >= _) && max.exists(a <= _)
         case AmountOp.Equals  => min.contains(a)
       }
-    case Condition.Kind(k)          => tx.kind == k
-    case Condition.Wallet(in, ids)  => ids.contains(tx.walletId) == in
+    case Condition.Kind(k)            => tx.kind == k
+    case Condition.Wallet(in, ids)    => ids.contains(tx.walletId) == in
     case Condition.DayOfMonth(lo, hi) => tx.date.getDayOfMonth >= lo && tx.date.getDayOfMonth <= hi
   }
 
@@ -136,13 +139,16 @@ object Rules {
     rule.actions.foldLeft(tx) { (t, action) =>
       action match {
         case Action.SetCategory(id) =>
-          if (t.categorySource == CategorySource.Manual || t.categorySource == CategorySource.Schedule || t.kind == TxKind.Transfer || t.splits.nonEmpty) t
+          if (
+            t.categorySource == CategorySource.Manual || t.categorySource == CategorySource.Schedule || t.kind == TxKind.Transfer ||
+            t.splits.nonEmpty
+          ) t
           else t.copy(categoryId = Some(id), categorySource = CategorySource.Rule)
-        case Action.AddTags(ids)    => t.copy(tags = (t.tags ++ ids).distinct)
-        case Action.SetPayee(id)    => t.copy(payeeId = Some(id))
+        case Action.AddTags(ids)     => t.copy(tags = (t.tags ++ ids).distinct)
+        case Action.SetPayee(id)     => t.copy(payeeId = Some(id))
         case Action.SetNote(mode, v) =>
           val current = t.note.fold("")(n => n.value: String)
-          val next = mode match {
+          val next    = mode match {
             case NoteMode.Replace => v
             case NoteMode.Append  => if (current.isEmpty) v else s"$current $v"
             case NoteMode.Prepend => if (current.isEmpty) v else s"$v $current"
@@ -174,7 +180,9 @@ object Payees {
     val t = normalize(title)
     payees.find(p => ((p.name.value: String) :: p.aliases).map(normalize).contains(t))
       .orElse {
-        payees.flatMap(p => ((p.name.value: String) :: p.aliases).map(normalize).filter(n => n.nonEmpty && containsWord(t, n)).map(n => n.length -> p))
+        payees.flatMap(p =>
+          ((p.name.value: String) :: p.aliases).map(normalize).filter(n => n.nonEmpty && containsWord(t, n)).map(n => n.length -> p)
+        )
           .maxByOption(_._1).map(_._2)
       }
   }

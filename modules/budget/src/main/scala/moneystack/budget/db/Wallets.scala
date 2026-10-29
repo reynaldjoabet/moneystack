@@ -12,6 +12,7 @@ import skunk.implicits.*
 trait Wallets[F[_]] {
   def create(w: Wallet): F[Wallet]
   def owned(owner: UserId): F[List[Wallet]]
+
   /** Wallets other users shared with `user`. */
   def sharedWith(user: UserId): F[List[Wallet]]
   def setArchived(owner: UserId, id: WalletId, archived: Boolean): F[Option[Wallet]]

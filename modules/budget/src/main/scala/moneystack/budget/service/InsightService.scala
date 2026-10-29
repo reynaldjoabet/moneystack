@@ -15,11 +15,24 @@ import java.time.{LocalDate, YearMonth}
  */
 trait InsightService[F[_]] {
   def summary(user: UserId, period: Period, currency: CurrencyCode, wallets: Option[List[WalletId]]): F[Either[BudgetError, Summary]]
-  def categories(user: UserId, period: Period, kind: CategoryKind, currency: CurrencyCode, wallets: Option[List[WalletId]]): F[Either[BudgetError, List[CategoryTotal]]]
-  def trend(user: UserId, period: Period, bucket: Bucket, currency: CurrencyCode, wallets: Option[List[WalletId]]): F[Either[BudgetError, List[TrendPoint]]]
+  def categories(
+      user: UserId,
+      period: Period,
+      kind: CategoryKind,
+      currency: CurrencyCode,
+      wallets: Option[List[WalletId]]
+  ): F[Either[BudgetError, List[CategoryTotal]]]
+  def trend(
+      user: UserId,
+      period: Period,
+      bucket: Bucket,
+      currency: CurrencyCode,
+      wallets: Option[List[WalletId]]
+  ): F[Either[BudgetError, List[TrendPoint]]]
   def compare(user: UserId, period: Period, currency: CurrencyCode): F[Either[BudgetError, List[CategoryChange]]]
   def cashflow(user: UserId, period: Period, currency: CurrencyCode): F[Either[BudgetError, List[FlowLink]]]
   def balances(user: UserId, asOf: LocalDate, currency: CurrencyCode): F[Either[BudgetError, InsightService.Balances]]
+
   /** Total balance at each month end in the period, and at its end. */
   def balanceHistory(user: UserId, period: Period, currency: CurrencyCode): F[Either[BudgetError, List[(LocalDate, Long)]]]
   def streak(user: UserId, today: LocalDate): F[Streak]
@@ -33,16 +46,32 @@ object InsightService {
 
   def make[F[_]: Async](loader: Loader[F]): InsightService[F] = new InsightService[F] {
 
-    private def entries(user: UserId, currency: CurrencyCode, wallets: Option[List[WalletId]]): F[Either[BudgetError, (Snapshot, List[Entry])]] =
+    private def entries(
+        user: UserId,
+        currency: CurrencyCode,
+        wallets: Option[List[WalletId]]
+    ): F[Either[BudgetError, (Snapshot, List[Entry])]] =
       loader.load(user).map(snap => snap.entries(currency, wallets).map(snap -> _))
 
     def summary(user: UserId, period: Period, currency: CurrencyCode, wallets: Option[List[WalletId]]): F[Either[BudgetError, Summary]] =
       entries(user, currency, wallets).map(_.map { case (_, es) => Reports.summary(es, period, currency) })
 
-    def categories(user: UserId, period: Period, kind: CategoryKind, currency: CurrencyCode, wallets: Option[List[WalletId]]): F[Either[BudgetError, List[CategoryTotal]]] =
+    def categories(
+        user: UserId,
+        period: Period,
+        kind: CategoryKind,
+        currency: CurrencyCode,
+        wallets: Option[List[WalletId]]
+    ): F[Either[BudgetError, List[CategoryTotal]]] =
       entries(user, currency, wallets).map(_.map { case (snap, es) => Reports.byCategory(es, period, kind, snap.categories) })
 
-    def trend(user: UserId, period: Period, bucket: Bucket, currency: CurrencyCode, wallets: Option[List[WalletId]]): F[Either[BudgetError, List[TrendPoint]]] =
+    def trend(
+        user: UserId,
+        period: Period,
+        bucket: Bucket,
+        currency: CurrencyCode,
+        wallets: Option[List[WalletId]]
+    ): F[Either[BudgetError, List[TrendPoint]]] =
       entries(user, currency, wallets).map(_.map { case (_, es) => Reports.trend(es, period, bucket) })
 
     def compare(user: UserId, period: Period, currency: CurrencyCode): F[Either[BudgetError, List[CategoryChange]]] =
@@ -53,13 +82,16 @@ object InsightService {
 
     def balances(user: UserId, asOf: LocalDate, currency: CurrencyCode): F[Either[BudgetError, Balances]] =
       loader.load(user).map { snap =>
-        Reports.balances(snap.wallets, snap.transactions, asOf, snap.fx, currency).map(bs => Balances(asOf, currency, bs, bs.map(_.baseMinor).sum))
+        Reports.balances(snap.wallets, snap.transactions, asOf, snap.fx, currency).map(bs =>
+          Balances(asOf, currency, bs, bs.map(_.baseMinor).sum)
+        )
       }
 
     def balanceHistory(user: UserId, period: Period, currency: CurrencyCode): F[Either[BudgetError, List[(LocalDate, Long)]]] =
       loader.load(user).map { snap =>
-        val dates = (Iterator.iterate(YearMonth.from(period.from))(_.plusMonths(1)).takeWhile(!_.isAfter(YearMonth.from(period.to)))
-                      .map(_.atEndOfMonth).filter(!_.isAfter(period.to)).toList :+ period.to).distinct
+        val dates =
+          (Iterator.iterate(YearMonth.from(period.from))(_.plusMonths(1)).takeWhile(!_.isAfter(YearMonth.from(period.to)))
+            .map(_.atEndOfMonth).filter(!_.isAfter(period.to)).toList :+ period.to).distinct
         dates.traverse(d => Reports.balances(snap.wallets, snap.transactions, d, snap.fx, currency).map(bs => d -> bs.map(_.baseMinor).sum))
       }
 

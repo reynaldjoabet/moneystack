@@ -23,8 +23,13 @@ trait BankingService[F[_]] {
   def setRuleActive(id: BankRuleId, active: Boolean): F[Boolean]
 
   /** Skips rows whose `externalId` was already imported for the account. */
-  def importTransactions(account: AccountId, rows: List[BankingService.NewTransaction], by: UserId): F[Either[LedgerError, BankingService.ImportResult]]
+  def importTransactions(
+      account: AccountId,
+      rows: List[BankingService.NewTransaction],
+      by: UserId
+  ): F[Either[LedgerError, BankingService.ImportResult]]
   def transactions(account: Option[AccountId], status: Option[BankTxStatus], limit: Int): F[List[BankTransaction]]
+
   /** Re-matches every uncategorised transaction against the current rules. */
   def runRules(by: UserId): F[BankingService.ImportResult]
 
@@ -73,8 +78,19 @@ object BankingService {
             for {
               id  <- Async[F].delay(BankRuleId.assume(UUID.randomUUID()))
               now <- Async[F].delay(Instant.now())
-              r   <- banking.createRule(BankRule(id, b.name, b.priority.getOrElse(100), b.applyTo, b.conjunction, b.conditions,
-                                                 b.accountId, b.contactId, b.autoCategorize, active = true, now))
+              r   <- banking.createRule(BankRule(
+                id,
+                b.name,
+                b.priority.getOrElse(100),
+                b.applyTo,
+                b.conjunction,
+                b.conditions,
+                b.accountId,
+                b.contactId,
+                b.autoCategorize,
+                active = true,
+                now
+              ))
             } yield r
           }
         }
@@ -90,10 +106,24 @@ object BankingService {
           } yield ()
           checked.traverse { _ =>
             for {
-              now     <- Async[F].delay(Instant.now())
-              txs     <- rows.traverse(r => Async[F].delay(BankTransaction(
-                           BankTransactionId.assume(UUID.randomUUID()), account, r.date, r.description, r.amountMinor,
-                           r.externalId, BankTxStatus.Uncategorized, None, None, None, None, None, now)))
+              now <- Async[F].delay(Instant.now())
+              txs <- rows.traverse(r =>
+                Async[F].delay(BankTransaction(
+                  BankTransactionId.assume(UUID.randomUUID()),
+                  account,
+                  r.date,
+                  r.description,
+                  r.amountMinor,
+                  r.externalId,
+                  BankTxStatus.Uncategorized,
+                  None,
+                  None,
+                  None,
+                  None,
+                  None,
+                  now
+                ))
+              )
               fresh   <- banking.insertTransactions(txs)
               applied <- applyRules(fresh, by)
             } yield applied.copy(imported = fresh.size, duplicates = rows.size - fresh.size)
@@ -124,25 +154,43 @@ object BankingService {
           }
         }
 
-      def categorize(id: BankTransactionId, account: AccountId, contact: Option[ContactId], by: UserId): F[Either[LedgerError, BankTransaction]] =
+      def categorize(
+          id: BankTransactionId,
+          account: AccountId,
+          contact: Option[ContactId],
+          by: UserId
+      ): F[Either[LedgerError, BankTransaction]] =
         posting.chart.flatMap { chart =>
           db.txE { s =>
             for {
-              tx      <- EitherT.fromOptionF(banking.findForUpdate(s, id), LedgerError.BankTransactionNotFound(id): LedgerError)
-              _       <- check(tx.status == BankTxStatus.Uncategorized, LedgerError.InvalidTransactionState(tx.status.key, "categorize"))
-              bank    <- EitherT.fromOption[F](chart.get(tx.accountId), LedgerError.UnknownAccount(tx.accountId): LedgerError)
-              rate    <- EitherT(posting.rate(bank.currency, None, tx.date))
-              postId  <- lift(Async[F].delay(UUID.randomUUID()))
-              header  <- lift(posting.header(tx.date, tx.externalId.flatMap(e => JournalRef.option(e.take(64))),
-                                             Some(Body.assume(tx.description.value)), bank.currency, rate,
-                                             JournalSource.BankTransaction, Some(postId), Some(by)))
-              amount   = PriceMinor.assume(math.abs(tx.amountMinor))
-              lines    = if (tx.isDeposit) List(JournalLine(tx.accountId, Side.Debit, amount, None), JournalLine(account, Side.Credit, amount, contact))
-                         else List(JournalLine(account, Side.Debit, amount, contact), JournalLine(tx.accountId, Side.Credit, amount, None))
-              entry   <- posting.postIn(s, header, lines, chart)
-              updated  = tx.copy(status = BankTxStatus.Categorized, categoryAccountId = Some(account), contactId = contact,
-                                 entryId = Some(entry.header.id), postingId = Some(postId))
-              _       <- lift(banking.update(s, updated))
+              tx     <- EitherT.fromOptionF(banking.findForUpdate(s, id), LedgerError.BankTransactionNotFound(id): LedgerError)
+              _      <- check(tx.status == BankTxStatus.Uncategorized, LedgerError.InvalidTransactionState(tx.status.key, "categorize"))
+              bank   <- EitherT.fromOption[F](chart.get(tx.accountId), LedgerError.UnknownAccount(tx.accountId): LedgerError)
+              rate   <- EitherT(posting.rate(bank.currency, None, tx.date))
+              postId <- lift(Async[F].delay(UUID.randomUUID()))
+              header <- lift(posting.header(
+                tx.date,
+                tx.externalId.flatMap(e => JournalRef.option(e.take(64))),
+                Some(Body.assume(tx.description.value)),
+                bank.currency,
+                rate,
+                JournalSource.BankTransaction,
+                Some(postId),
+                Some(by)
+              ))
+              amount = PriceMinor.assume(math.abs(tx.amountMinor))
+              lines  = if (tx.isDeposit)
+                List(JournalLine(tx.accountId, Side.Debit, amount, None), JournalLine(account, Side.Credit, amount, contact))
+              else List(JournalLine(account, Side.Debit, amount, contact), JournalLine(tx.accountId, Side.Credit, amount, None))
+              entry <- posting.postIn(s, header, lines, chart)
+              updated = tx.copy(
+                status = BankTxStatus.Categorized,
+                categoryAccountId = Some(account),
+                contactId = contact,
+                entryId = Some(entry.header.id),
+                postingId = Some(postId)
+              )
+              _ <- lift(banking.update(s, updated))
             } yield updated
           }
         }
@@ -152,12 +200,19 @@ object BankingService {
           db.txE { s =>
             for {
               tx      <- EitherT.fromOptionF(banking.findForUpdate(s, id), LedgerError.BankTransactionNotFound(id): LedgerError)
-              entryId <- EitherT.fromOption[F](tx.entryId.filter(_ => tx.status == BankTxStatus.Categorized),
-                                               LedgerError.InvalidTransactionState(tx.status.key, "uncategorize"): LedgerError)
-              _       <- posting.reverseIn(s, entryId, tx.date, Some(by), chart)
-              updated  = tx.copy(status = BankTxStatus.Uncategorized, categoryAccountId = None, contactId = None,
-                                 entryId = None, postingId = None)
-              _       <- lift(banking.update(s, updated))
+              entryId <- EitherT.fromOption[F](
+                tx.entryId.filter(_ => tx.status == BankTxStatus.Categorized),
+                LedgerError.InvalidTransactionState(tx.status.key, "uncategorize"): LedgerError
+              )
+              _ <- posting.reverseIn(s, entryId, tx.date, Some(by), chart)
+              updated = tx.copy(
+                status = BankTxStatus.Uncategorized,
+                categoryAccountId = None,
+                contactId = None,
+                entryId = None,
+                postingId = None
+              )
+              _ <- lift(banking.update(s, updated))
             } yield updated
           }
         }
@@ -168,13 +223,18 @@ object BankingService {
       def restore(id: BankTransactionId): F[Either[LedgerError, BankTransaction]] =
         transition(id, BankTxStatus.Excluded, BankTxStatus.Uncategorized, "restore")
 
-      private def transition(id: BankTransactionId, from: BankTxStatus, to: BankTxStatus, action: String): F[Either[LedgerError, BankTransaction]] =
+      private def transition(
+          id: BankTransactionId,
+          from: BankTxStatus,
+          to: BankTxStatus,
+          action: String
+      ): F[Either[LedgerError, BankTransaction]] =
         db.txE { s =>
           for {
-            tx      <- EitherT.fromOptionF(banking.findForUpdate(s, id), LedgerError.BankTransactionNotFound(id): LedgerError)
-            _       <- check(tx.status == from, LedgerError.InvalidTransactionState(tx.status.key, action))
-            updated  = tx.copy(status = to)
-            _       <- lift(banking.update(s, updated))
+            tx <- EitherT.fromOptionF(banking.findForUpdate(s, id), LedgerError.BankTransactionNotFound(id): LedgerError)
+            _  <- check(tx.status == from, LedgerError.InvalidTransactionState(tx.status.key, action))
+            updated = tx.copy(status = to)
+            _ <- lift(banking.update(s, updated))
           } yield updated
         }
     }

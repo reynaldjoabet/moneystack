@@ -11,8 +11,16 @@ class LedgerSuite extends munit.FunSuite {
   private val eur = CurrencyCode.EUR
 
   private def account(code: String, t: AccountType, currency: CurrencyCode = usd, active: Boolean = true): Account =
-    Account(AccountId.assume(UUID.randomUUID()), AccountCode.applyUnsafe(code), Title.applyUnsafe(s"acct $code"),
-            t, currency, None, active, Instant.EPOCH)
+    Account(
+      AccountId.assume(UUID.randomUUID()),
+      AccountCode.applyUnsafe(code),
+      Title.applyUnsafe(s"acct $code"),
+      t,
+      currency,
+      None,
+      active,
+      Instant.EPOCH
+    )
 
   private def line(a: Account, side: Side, minor: Long): JournalLine =
     JournalLine(a.id, side, PriceMinor.applyUnsafe(minor), None)
@@ -83,8 +91,12 @@ class LedgerSuite extends munit.FunSuite {
   test("balances across many awkward rates") {
     val rates = List("0.0137", "1.0833", "91.7724", "0.9999999", "3.3333333333").map(r => ExchangeRate.assume(BigDecimal(r)))
     val lines = List(
-      line(cash, Side.Debit, 1001), line(fees, Side.Debit, 333), line(fees, Side.Debit, 7),
-      line(revenue, Side.Credit, 777), line(revenue, Side.Credit, 563), line(revenue, Side.Credit, 1)
+      line(cash, Side.Debit, 1001),
+      line(fees, Side.Debit, 333),
+      line(fees, Side.Debit, 7),
+      line(revenue, Side.Credit, 777),
+      line(revenue, Side.Credit, 563),
+      line(revenue, Side.Credit, 1)
     )
     rates.foreach { r =>
       val posted = Ledger.toBase(lines, r)
@@ -95,9 +107,19 @@ class LedgerSuite extends munit.FunSuite {
   test("a reversal at the same rate cancels exactly") {
     val rate   = ExchangeRate.assume(BigDecimal("1.0833"))
     val posted = Ledger.toBase(List(line(eurBank, Side.Debit, 999), line(revenue, Side.Credit, 333), line(revenue, Side.Credit, 666)), rate)
-    val header = JournalHeader(JournalEntryId.assume(UUID.randomUUID()), LocalDate.of(2026, 1, 5), None, None,
-                               eur, rate, JournalSource.Manual, None, None, Instant.EPOCH)
-    val undo   = Ledger.toBase(Ledger.reversalOf(JournalEntry(header, posted)), rate)
+    val header = JournalHeader(
+      JournalEntryId.assume(UUID.randomUUID()),
+      LocalDate.of(2026, 1, 5),
+      None,
+      None,
+      eur,
+      rate,
+      JournalSource.Manual,
+      None,
+      None,
+      Instant.EPOCH
+    )
+    val undo = Ledger.toBase(Ledger.reversalOf(JournalEntry(header, posted)), rate)
 
     val net = (posted ++ undo).groupMapReduce(_.accountId)(l =>
       if (l.side == Side.Debit) l.baseAmountMinor.value: Long else -(l.baseAmountMinor.value: Long)
@@ -116,8 +138,14 @@ class LedgerSuite extends munit.FunSuite {
 
   test("lock covers dates through lockThrough except a reopened window") {
     val by   = UserId.assume(UUID.randomUUID())
-    val lock = LedgerLock(LocalDate.of(2026, 3, 31), Some(LocalDate.of(2026, 2, 1)), Some(LocalDate.of(2026, 2, 28)),
-                          Body.applyUnsafe("Q1 close"), by, Instant.EPOCH)
+    val lock = LedgerLock(
+      LocalDate.of(2026, 3, 31),
+      Some(LocalDate.of(2026, 2, 1)),
+      Some(LocalDate.of(2026, 2, 28)),
+      Body.applyUnsafe("Q1 close"),
+      by,
+      Instant.EPOCH
+    )
     assert(lock.locks(LocalDate.of(2026, 1, 15)))
     assert(!lock.locks(LocalDate.of(2026, 2, 14)))
     assert(lock.locks(LocalDate.of(2026, 3, 31)))

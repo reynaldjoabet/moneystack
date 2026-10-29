@@ -60,13 +60,13 @@ final class Posting[F[_]: Async](
     for {
       entry <- EitherT.fromEither[F](Ledger.entry(header, lines, baseCurrency, chart, allowInactive))
       saved <- EitherT(journals.postIn(s, entry).map {
-                 case Journals.Outcome.Posted(e) => Right(e)
-                 case Journals.Outcome.Locked(l) => Left(LedgerError.PeriodLocked(header.date, l.lockThrough))
-                 case Journals.Outcome.Duplicate(existing) =>
-                   val sid = header.sourceId.getOrElse(header.id.value)
-                   if (header.source == JournalSource.Reversal) Left(LedgerError.AlreadyReversed(JournalEntryId.assume(sid), existing))
-                   else Left(LedgerError.DuplicatePosting(header.source, sid))
-               })
+        case Journals.Outcome.Posted(e)           => Right(e)
+        case Journals.Outcome.Locked(l)           => Left(LedgerError.PeriodLocked(header.date, l.lockThrough))
+        case Journals.Outcome.Duplicate(existing) =>
+          val sid = header.sourceId.getOrElse(header.id.value)
+          if (header.source == JournalSource.Reversal) Left(LedgerError.AlreadyReversed(JournalEntryId.assume(sid), existing))
+          else Left(LedgerError.DuplicatePosting(header.source, sid))
+      })
     } yield saved
 
   /** Posts the entry that cancels `entryId`, dated `date`, inside `s`. */
@@ -79,8 +79,16 @@ final class Posting[F[_]: Async](
   ): EitherT[F, LedgerError, JournalEntry] =
     for {
       orig <- EitherT.fromOptionF(journals.findIn(s, entryId), LedgerError.EntryNotFound(entryId): LedgerError)
-      h    <- EitherT.liftF(header(date, orig.header.reference, Some(Body.assume(s"Reversal of entry ${entryId.value}")),
-                                   orig.header.currency, orig.header.exchangeRate, JournalSource.Reversal, Some(entryId.value), by))
-      e    <- postIn(s, h, Ledger.reversalOf(orig), chart, allowInactive = true)
+      h    <- EitherT.liftF(header(
+        date,
+        orig.header.reference,
+        Some(Body.assume(s"Reversal of entry ${entryId.value}")),
+        orig.header.currency,
+        orig.header.exchangeRate,
+        JournalSource.Reversal,
+        Some(entryId.value),
+        by
+      ))
+      e <- postIn(s, h, Ledger.reversalOf(orig), chart, allowInactive = true)
     } yield e
 }

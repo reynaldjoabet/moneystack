@@ -14,15 +14,15 @@ import org.http4s.circe.CirceEntityCodec.*
  */
 abstract class RouteSupport[F[_]: Async](auth: Request[F] => F[Option[UserId]]) extends HttpSupport[F, LedgerError](auth) {
 
-  protected val AccountIdVar  = new UuidVar(AccountId.assume)
-  protected val EntryIdVar    = new UuidVar(JournalEntryId.assume)
-  protected val ContactIdVar  = new UuidVar(ContactId.assume)
-  protected val TaxRateIdVar  = new UuidVar(TaxRateId.assume)
-  protected val ItemIdVar     = new UuidVar(ItemId.assume)
-  protected val DocumentIdVar = new UuidVar(DocumentId.assume)
+  protected val AccountIdVar    = new UuidVar(AccountId.assume)
+  protected val EntryIdVar      = new UuidVar(JournalEntryId.assume)
+  protected val ContactIdVar    = new UuidVar(ContactId.assume)
+  protected val TaxRateIdVar    = new UuidVar(TaxRateId.assume)
+  protected val ItemIdVar       = new UuidVar(ItemId.assume)
+  protected val DocumentIdVar   = new UuidVar(DocumentId.assume)
   protected val SettlementIdVar = new UuidVar(SettlementId.assume)
-  protected val BankTxIdVar   = new UuidVar(BankTransactionId.assume)
-  protected val BankRuleIdVar = new UuidVar(BankRuleId.assume)
+  protected val BankTxIdVar     = new UuidVar(BankTransactionId.assume)
+  protected val BankRuleIdVar   = new UuidVar(BankRuleId.assume)
 
   protected given QueryParamDecoder[AccountId]    = uuidParam("account id", AccountId.assume)
   protected given QueryParamDecoder[ContactId]    = uuidParam("contact id", ContactId.assume)
@@ -41,12 +41,12 @@ abstract class RouteSupport[F[_]: Async](auth: Request[F] => F[Option[UserId]]) 
     val body = errorBody(err)
     err match {
       case EntryNotFound(_) | DocumentNotFound(_) | SettlementNotFound(_) | BankTransactionNotFound(_) |
-           DraftNotFound(_) | RecurringNotFound(_) | ReconciliationNotFound(_)                          => NotFound(body)
+          DraftNotFound(_) | RecurringNotFound(_) | ReconciliationNotFound(_) => NotFound(body)
       case PeriodLocked(_, _) | AlreadyReversed(_, _) | DuplicateAccountCode(_) | DuplicateCode(_, _) |
-           DuplicatePosting(_, _) | AlreadyVoided(_) | DocumentHasPayments | InvalidTransactionState(_, _) |
-           InsufficientStock(_, _, _) | StockAlreadyConsumed(_, _, _) | OverAllocation(_, _, _) |
-           ReconciliationClosed | ReconciliationUnbalanced(_)                                  => Conflict(body)
-      case _                                                                                     => BadRequest(body)
+          DuplicatePosting(_, _) | AlreadyVoided(_) | DocumentHasPayments | InvalidTransactionState(_, _) |
+          InsufficientStock(_, _, _) | StockAlreadyConsumed(_, _, _) | OverAllocation(_, _, _) |
+          ReconciliationClosed | ReconciliationUnbalanced(_) => Conflict(body)
+      case _ => BadRequest(body)
     }
   }
 }

@@ -47,19 +47,19 @@ object RecommendationService {
     ): F[Recommendation] =
       for {
         now <- Async[F].delay(Instant.now())
-        r    = Recommendation(
-                 id                = RecommendationId.assume(UUID.randomUUID()),
-                 modelPortfolioId  = modelId,
-                 ticker            = ticker,
-                 exchange          = exchange,
-                 action            = action,
-                 rationale         = rationale,
-                 targetWeightBps   = targetWeight,
-                 publishedAt       = now,
-                 publishedBy       = analystId
-               )
+        r = Recommendation(
+          id = RecommendationId.assume(UUID.randomUUID()),
+          modelPortfolioId = modelId,
+          ticker = ticker,
+          exchange = exchange,
+          action = action,
+          rationale = rationale,
+          targetWeightBps = targetWeight,
+          publishedAt = now,
+          publishedBy = analystId
+        )
         saved <- recs.publish(r)
-        title  = Title.assume(s"New ${action.toString.toLowerCase} signal: ${ticker.value}")
+        title = Title.assume(s"New ${action.toString.toLowerCase} signal: ${ticker.value}")
         // Notify everyone with a portfolio backed by this model.
         // Production: a materialised view or a denormalised follower list would
         // avoid loading every investor on every publish.

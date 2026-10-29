@@ -28,29 +28,52 @@ class BankingIntegrationSuite extends PostgresSuite {
   private def byExt(ext: String): IO[BankTransaction] = feed.map(_.find(_.externalId.contains(ext)).get)
 
   private def bankBalance: IO[Long] =
-    books.ledger.trialBalance(farFuture).map(_.rows.find(_.accountId == bank.id).fold(0L)(r => (r.debitMinor.value: Long) - r.creditMinor.value))
+    books.ledger.trialBalance(farFuture).map(_.rows.find(_.accountId == bank.id).fold(0L)(r =>
+      (r.debitMinor.value: Long) - r.creditMinor.value
+    ))
 
   test("rules are validated against the chart and their conditions") {
     for {
-      _ <- failsWith(books.banking.createRule(rule("empty", 1, auto = false, SystemAccounts.GeneralExpenses.id))) { case LedgerError.InvalidRule(_) => }
-      _ <- failsWith(books.banking.createRule(rule("bad", 1, auto = false, AccountId.assume(java.util.UUID.randomUUID()),
-                                                   cond(RuleField.Description, RuleOperator.Contains, "x")))) { case LedgerError.UnknownAccount(_) => }
+      _ <- failsWith(books.banking.createRule(rule("empty", 1, auto = false, SystemAccounts.GeneralExpenses.id))) {
+        case LedgerError.InvalidRule(_) =>
+      }
+      _ <- failsWith(books.banking.createRule(rule(
+        "bad",
+        1,
+        auto = false,
+        AccountId.assume(java.util.UUID.randomUUID()),
+        cond(RuleField.Description, RuleOperator.Contains, "x")
+      ))) { case LedgerError.UnknownAccount(_) => }
     } yield ()
   }
 
   test("import de-duplicates, auto-categorises matching rules and tags suggestions") {
     for {
-      _  <- ok(books.banking.createRule(rule("AWS", 10, auto = true, SystemAccounts.GeneralExpenses.id,
-                                             cond(RuleField.Description, RuleOperator.Contains, "amazon web services"))))
-      _  <- ok(books.banking.createRule(rule("Stripe payouts", 20, auto = false, SystemAccounts.Sales.id,
-                                             cond(RuleField.Description, RuleOperator.StartsWith, "stripe"),
-                                             cond(RuleField.Amount, RuleOperator.GreaterThan, "1000"))))
-      r1 <- ok(books.banking.importTransactions(bank.id, List(
-              row(1, "AMAZON WEB SERVICES EMEA", -12_000, "tx-1"),
-              row(2, "STRIPE PAYOUT 8812", 50_000, "tx-2"),
-              row(3, "Coffee", -450, "tx-3")
-            ), accountant))
-      r2 <- ok(books.banking.importTransactions(bank.id, List(row(1, "AMAZON WEB SERVICES EMEA", -12_000, "tx-1")), accountant))
+      _ <- ok(books.banking.createRule(rule(
+        "AWS",
+        10,
+        auto = true,
+        SystemAccounts.GeneralExpenses.id,
+        cond(RuleField.Description, RuleOperator.Contains, "amazon web services")
+      )))
+      _ <- ok(books.banking.createRule(rule(
+        "Stripe payouts",
+        20,
+        auto = false,
+        SystemAccounts.Sales.id,
+        cond(RuleField.Description, RuleOperator.StartsWith, "stripe"),
+        cond(RuleField.Amount, RuleOperator.GreaterThan, "1000")
+      )))
+      r1 <- ok(books.banking.importTransactions(
+        bank.id,
+        List(
+          row(1, "AMAZON WEB SERVICES EMEA", -12_000, "tx-1"),
+          row(2, "STRIPE PAYOUT 8812", 50_000, "tx-2"),
+          row(3, "Coffee", -450, "tx-3")
+        ),
+        accountant
+      ))
+      r2     <- ok(books.banking.importTransactions(bank.id, List(row(1, "AMAZON WEB SERVICES EMEA", -12_000, "tx-1")), accountant))
       aws    <- byExt("tx-1")
       stripe <- byExt("tx-2")
       coffee <- byExt("tx-3")
@@ -72,14 +95,18 @@ class BankingIntegrationSuite extends PostgresSuite {
       stripe <- byExt("tx-2")
       coffee <- byExt("tx-3")
       cat    <- ok(books.banking.categorize(stripe.id, SystemAccounts.Sales.id, None, accountant))
-      _      <- failsWith(books.banking.categorize(stripe.id, SystemAccounts.Sales.id, None, accountant)) { case LedgerError.InvalidTransactionState("categorized", _) => }
-      bal1   <- bankBalance
-      unc    <- ok(books.banking.uncategorize(stripe.id, accountant))
-      bal2   <- bankBalance
-      exc    <- ok(books.banking.exclude(coffee.id))
-      _      <- failsWith(books.banking.categorize(coffee.id, SystemAccounts.GeneralExpenses.id, None, accountant)) { case LedgerError.InvalidTransactionState("excluded", _) => }
-      res    <- ok(books.banking.restore(coffee.id))
-      _      <- failsWith(books.banking.restore(coffee.id)) { case LedgerError.InvalidTransactionState(_, "restore") => }
+      _      <- failsWith(books.banking.categorize(stripe.id, SystemAccounts.Sales.id, None, accountant)) {
+        case LedgerError.InvalidTransactionState("categorized", _) =>
+      }
+      bal1 <- bankBalance
+      unc  <- ok(books.banking.uncategorize(stripe.id, accountant))
+      bal2 <- bankBalance
+      exc  <- ok(books.banking.exclude(coffee.id))
+      _    <- failsWith(books.banking.categorize(coffee.id, SystemAccounts.GeneralExpenses.id, None, accountant)) {
+        case LedgerError.InvalidTransactionState("excluded", _) =>
+      }
+      res <- ok(books.banking.restore(coffee.id))
+      _   <- failsWith(books.banking.restore(coffee.id)) { case LedgerError.InvalidTransactionState(_, "restore") => }
     } yield {
       assertEquals(cat.status, BankTxStatus.Categorized)
       assertEquals(bal1, -12_000L + 50_000L)
@@ -93,8 +120,13 @@ class BankingIntegrationSuite extends PostgresSuite {
 
   test("running rules again picks up newly created rules") {
     for {
-      _   <- ok(books.banking.createRule(rule("Coffee", 5, auto = true, SystemAccounts.GeneralExpenses.id,
-                                              cond(RuleField.Description, RuleOperator.Equals, "coffee"))))
+      _ <- ok(books.banking.createRule(rule(
+        "Coffee",
+        5,
+        auto = true,
+        SystemAccounts.GeneralExpenses.id,
+        cond(RuleField.Description, RuleOperator.Equals, "coffee")
+      )))
       res <- books.banking.runRules(accountant)
       cof <- byExt("tx-3")
     } yield {

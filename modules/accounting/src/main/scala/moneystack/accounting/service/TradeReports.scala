@@ -47,11 +47,19 @@ object TradeReports {
   def aging(kind: DocumentKind, asOf: LocalDate, currency: CurrencyCode, contacts: List[Contact], items: List[OpenItem]): Aging = {
     val open = items.filter(_.openMinor > 0L)
     val docs = open.map { i =>
-      AgingDocument(i.documentId, i.number, i.contactId, i.dueDate, ChronoUnit.DAYS.between(i.dueDate, asOf).max(0L),
-                    i.currency, minor(i.openMinor), minor(i.openBaseMinor))
+      AgingDocument(
+        i.documentId,
+        i.number,
+        i.contactId,
+        i.dueDate,
+        ChronoUnit.DAYS.between(i.dueDate, asOf).max(0L),
+        i.currency,
+        minor(i.openMinor),
+        minor(i.openBaseMinor)
+      )
     }
     val names = contacts.map(c => c.id -> c.name).toMap
-    val rows = docs.groupBy(_.contactId).toList.flatMap { case (id, ds) =>
+    val rows  = docs.groupBy(_.contactId).toList.flatMap { case (id, ds) =>
       names.get(id).map(name => AgingRow(id, name, buckets(ds)))
     }.sortBy(_.name.value: String)
     Aging(kind, asOf, currency, rows, buckets(docs), docs.sortBy(d => (-d.daysOverdue, d.number)))
@@ -61,11 +69,11 @@ object TradeReports {
     val sums = Array.fill(5)(0L)
     docs.foreach { d =>
       val i = d.daysOverdue match {
-        case 0L                => 0
-        case n if n <= 30L     => 1
-        case n if n <= 60L     => 2
-        case n if n <= 90L     => 3
-        case _                 => 4
+        case 0L            => 0
+        case n if n <= 30L => 1
+        case n if n <= 60L => 2
+        case n if n <= 90L => 3
+        case _             => 4
       }
       sums(i) += d.openBaseMinor.value
     }
@@ -104,8 +112,17 @@ object TradeReports {
     val rows = rates.filter(r => activity.exists(_.taxRateId == r.id)).sortBy(_.code.value: String).map { r =>
       val (salesTaxable, collected) = of(r.id, DocumentKind.Invoice)
       val (purchTaxable, paid)      = of(r.id, DocumentKind.Bill)
-      SalesTaxRow(r.id, r.code, r.name, r.rateBps, minor(salesTaxable), minor(collected), minor(purchTaxable), minor(paid),
-                  minor(collected - paid))
+      SalesTaxRow(
+        r.id,
+        r.code,
+        r.name,
+        r.rateBps,
+        minor(salesTaxable),
+        minor(collected),
+        minor(purchTaxable),
+        minor(paid),
+        minor(collected - paid)
+      )
     }
     val collected = rows.map(_.taxCollectedMinor.value: Long).sum
     val paid      = rows.map(_.taxPaidMinor.value: Long).sum
@@ -127,8 +144,8 @@ object TradeReports {
 
   def inventoryValuation(asOf: LocalDate, currency: CurrencyCode, items: List[Item], stocks: List[Stock]): InventoryValuation = {
     val byItem = stocks.map(s => s.itemId -> s).toMap
-    val rows = items.filter(_.kind == ItemKind.Inventory).sortBy(_.sku.value: String).map { i =>
-      val s = byItem.getOrElse(i.id, Stock(i.id, BigDecimal(0), 0L))
+    val rows   = items.filter(_.kind == ItemKind.Inventory).sortBy(_.sku.value: String).map { i =>
+      val s   = byItem.getOrElse(i.id, Stock(i.id, BigDecimal(0), 0L))
       val avg = Option.when(s.quantity > 0)((BigDecimal(s.valueMinor) / s.quantity).setScale(4, RoundingMode.HALF_EVEN))
       InventoryRow(i.id, i.sku, i.name, s.quantity, minor(s.valueMinor), avg)
     }

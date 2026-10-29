@@ -20,7 +20,7 @@ object RuleJson {
   given Codec[AmountOp]  = enumCodec(AmountOp.render, AmountOp.parse)
   given Codec[NoteMode]  = enumCodec(NoteMode.render, NoteMode.parse)
 
-  private def membership(in: Boolean) = if (in) "in" else "not_in"
+  private def membership(in: Boolean)  = if (in) "in" else "not_in"
   private def membershipOf(c: HCursor) = c.get[String]("operator").flatMap {
     case "in"     => Right(true)
     case "not_in" => Right(false)
@@ -28,12 +28,14 @@ object RuleJson {
   }
 
   given Encoder[Condition] = Encoder.instance {
-    case Condition.Text(f, op, vs)     => Json.obj("field" -> f.asJson, "operator" -> op.asJson, "values" -> vs.asJson)
-    case Condition.Payee(in, ids)      => Json.obj("field" -> "payee".asJson, "operator" -> membership(in).asJson, "ids" -> ids.asJson)
-    case Condition.Amount(op, min, max) => Json.obj("field" -> "amount".asJson, "operator" -> op.asJson, "min" -> min.asJson, "max" -> max.asJson)
-    case Condition.Kind(k)             => Json.obj("field" -> "type".asJson, "operator" -> "equals".asJson, "value" -> k.asJson)
-    case Condition.Wallet(in, ids)     => Json.obj("field" -> "wallet".asJson, "operator" -> membership(in).asJson, "ids" -> ids.asJson)
-    case Condition.DayOfMonth(lo, hi)  => Json.obj("field" -> "day_of_month".asJson, "operator" -> "between".asJson, "min" -> lo.asJson, "max" -> hi.asJson)
+    case Condition.Text(f, op, vs)      => Json.obj("field" -> f.asJson, "operator" -> op.asJson, "values" -> vs.asJson)
+    case Condition.Payee(in, ids)       => Json.obj("field" -> "payee".asJson, "operator" -> membership(in).asJson, "ids" -> ids.asJson)
+    case Condition.Amount(op, min, max) =>
+      Json.obj("field" -> "amount".asJson, "operator" -> op.asJson, "min" -> min.asJson, "max" -> max.asJson)
+    case Condition.Kind(k)            => Json.obj("field" -> "type".asJson, "operator" -> "equals".asJson, "value" -> k.asJson)
+    case Condition.Wallet(in, ids)    => Json.obj("field" -> "wallet".asJson, "operator" -> membership(in).asJson, "ids" -> ids.asJson)
+    case Condition.DayOfMonth(lo, hi) =>
+      Json.obj("field" -> "day_of_month".asJson, "operator" -> "between".asJson, "min" -> lo.asJson, "max" -> hi.asJson)
   }
 
   given Decoder[Condition] = Decoder.instance { c =>
@@ -44,10 +46,10 @@ object RuleJson {
           op <- c.get[TextOp]("operator")
           vs <- c.getOrElse[List[String]]("values")(Nil)
         } yield Condition.Text(f, op, vs)
-      case "payee"        => (membershipOf(c), c.get[List[PayeeId]]("ids")).mapN(Condition.Payee.apply)
-      case "amount"       => (c.get[AmountOp]("operator"), c.get[Option[Long]]("min"), c.get[Option[Long]]("max")).mapN(Condition.Amount.apply)
-      case "type"         => c.get[TxKind]("value").map(Condition.Kind.apply)
-      case "wallet"       => (membershipOf(c), c.get[List[WalletId]]("ids")).mapN(Condition.Wallet.apply)
+      case "payee"  => (membershipOf(c), c.get[List[PayeeId]]("ids")).mapN(Condition.Payee.apply)
+      case "amount" => (c.get[AmountOp]("operator"), c.get[Option[Long]]("min"), c.get[Option[Long]]("max")).mapN(Condition.Amount.apply)
+      case "type"   => c.get[TxKind]("value").map(Condition.Kind.apply)
+      case "wallet" => (membershipOf(c), c.get[List[WalletId]]("ids")).mapN(Condition.Wallet.apply)
       case "day_of_month" => (c.get[Int]("min"), c.get[Int]("max")).mapN(Condition.DayOfMonth.apply)
       case other          => Left(DecodingFailure(s"unknown condition field: $other", c.history))
     }

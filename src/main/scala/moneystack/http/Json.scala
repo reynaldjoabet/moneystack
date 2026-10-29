@@ -25,8 +25,8 @@ object Json {
     case "income"       => Right(PortfolioStrategy.Income)
     case o              => Left(s"unknown strategy: $o")
   }
-  given Encoder[TradeAction]   = Encoder.encodeString.contramap(_.toString.toLowerCase)
-  given Decoder[TradeAction]   = Decoder.decodeString.emap {
+  given Encoder[TradeAction] = Encoder.encodeString.contramap(_.toString.toLowerCase)
+  given Decoder[TradeAction] = Decoder.decodeString.emap {
     case "buy"  => Right(TradeAction.Buy)
     case "sell" => Right(TradeAction.Sell)
     case "hold" => Right(TradeAction.Hold)
@@ -49,24 +49,23 @@ object Json {
   }
   val userEncoder: Encoder[User] = summon[Encoder[User]]
 
-  given Encoder[Instrument]            = deriveEncoder
-  given Encoder[ModelPortfolio]        = deriveEncoder
-  given Encoder[ModelAllocation]       = deriveEncoder
-  given Encoder[Portfolio]             = deriveEncoder
-  given Encoder[Holding]               = deriveEncoder
-  given Encoder[Recommendation]        = deriveEncoder
-  given Encoder[Quote]                 = deriveEncoder
-  given Encoder[NewsItem]              = deriveEncoder
-  given Encoder[Plan]                  = deriveEncoder
-  given Encoder[Subscription]          = deriveEncoder
-  given Encoder[Payment]               = deriveEncoder
-  given Encoder[Course]                = deriveEncoder
-  given Encoder[Webinar]               = deriveEncoder
-  given Encoder[PortfolioPerformance]  = deriveEncoder
+  given Encoder[Instrument]           = deriveEncoder
+  given Encoder[ModelPortfolio]       = deriveEncoder
+  given Encoder[ModelAllocation]      = deriveEncoder
+  given Encoder[Portfolio]            = deriveEncoder
+  given Encoder[Holding]              = deriveEncoder
+  given Encoder[Recommendation]       = deriveEncoder
+  given Encoder[Quote]                = deriveEncoder
+  given Encoder[NewsItem]             = deriveEncoder
+  given Encoder[Plan]                 = deriveEncoder
+  given Encoder[Subscription]         = deriveEncoder
+  given Encoder[Payment]              = deriveEncoder
+  given Encoder[Course]               = deriveEncoder
+  given Encoder[Webinar]              = deriveEncoder
+  given Encoder[PortfolioPerformance] = deriveEncoder
 
   given Encoder[PortfolioService.ValuationLine] = deriveEncoder
   given Encoder[PortfolioService.Valuation]     = deriveEncoder
-
 
   // ---- request bodies ----
   final case class SignupBody(email: Email, password: String, displayName: DisplayName, role: Role, locale: Locale)
@@ -85,14 +84,27 @@ object Json {
   given Decoder[ModelAllocation] = deriveDecoder
   given Decoder[CreateModelBody] = deriveDecoder
 
-  final case class PublishRecBody(modelId: ModelPortfolioId, ticker: Ticker, exchange: Exchange,
-                                  action: TradeAction, rationale: Body, targetWeightBps: Option[WeightBps])
+  final case class PublishRecBody(
+      modelId: ModelPortfolioId,
+      ticker: Ticker,
+      exchange: Exchange,
+      action: TradeAction,
+      rationale: Body,
+      targetWeightBps: Option[WeightBps]
+  )
   given Decoder[PublishRecBody] = deriveDecoder
 
   final case class SubscribeBody(planId: PlanId)
   given Decoder[SubscribeBody] = deriveDecoder
 
-  final case class UpsertPlanBody(code: String, name: Title, priceMinor: PriceMinor, currency: CurrencyCode, interval: BillingInterval, active: Boolean)
+  final case class UpsertPlanBody(
+      code: String,
+      name: Title,
+      priceMinor: PriceMinor,
+      currency: CurrencyCode,
+      interval: BillingInterval,
+      active: Boolean
+  )
   given Decoder[BillingInterval] = Decoder.decodeString.emap {
     case "monthly" => Right(BillingInterval.Monthly)
     case "annual"  => Right(BillingInterval.Annual)

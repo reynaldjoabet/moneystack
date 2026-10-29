@@ -22,8 +22,8 @@ trait Crm[F[_]] {
 object Crm {
   def sandbox[F[_]: Sync]: F[Crm[F]] = Sync[F].pure(new Crm[F] {
     def upsertContact(userId: UserId, email: Email, displayName: DisplayName): F[Unit] = Sync[F].unit
-    def recordSubscriptionChange(userId: UserId, sub: Subscription): F[Unit]            = Sync[F].unit
-    def recordPayment(userId: UserId, payment: Payment): F[Unit]                        = Sync[F].unit
+    def recordSubscriptionChange(userId: UserId, sub: Subscription): F[Unit]           = Sync[F].unit
+    def recordPayment(userId: UserId, payment: Payment): F[Unit]                       = Sync[F].unit
   })
 }
 
@@ -31,7 +31,7 @@ object Crm {
 
 trait Tax[F[_]] {
   def submit1099(userId: UserId, year: Int): F[Tax.Receipt]
-  def fetchStatement(receipt: Tax.Receipt): F[String]   // URL to the rendered statement
+  def fetchStatement(receipt: Tax.Receipt): F[String] // URL to the rendered statement
 }
 
 object Tax {
@@ -53,7 +53,7 @@ trait Accounting[F[_]] {
 
 object Accounting {
   def sandbox[F[_]: Sync]: F[Accounting[F]] = Sync[F].pure(new Accounting[F] {
-    def postRevenue(userId: UserId, payment: Payment): F[Unit] = Sync[F].unit
+    def postRevenue(userId: UserId, payment: Payment): F[Unit]              = Sync[F].unit
     def revenueReport(year: Int, month: Int): F[List[(UserId, PriceMinor)]] = Sync[F].pure(Nil)
   })
 }
@@ -105,7 +105,7 @@ object ErrorMonitoring {
 // ---------- Jira incident / support ticket sink ----------
 
 trait SupportSink[F[_]] {
-  def openTicket(userId: UserId, summary: Title, description: Body): F[String]   // returns issue key
+  def openTicket(userId: UserId, summary: Title, description: Body): F[String] // returns issue key
 }
 
 object SupportSink {

@@ -11,6 +11,7 @@ import java.time.LocalDate
 
 /** Invoices and bills. Headers gain only `voided_on` after issue; lines never change. */
 trait Documents[F[_]] {
+
   /** Allocates the next number in `series` inside the caller's transaction (gapless). */
   def nextNumber(s: Session[F], series: String): F[Long]
   def insert(s: Session[F], d: Document, lines: List[DocumentLine]): F[Unit]
@@ -18,6 +19,7 @@ trait Documents[F[_]] {
   def findForUpdate(s: Session[F], id: DocumentId): F[Option[Document]]
   def lines(id: DocumentId): F[List[DocumentLine]]
   def linesIn(s: Session[F], id: DocumentId): F[List[DocumentLine]]
+
   /** Amount and document-rate base already settled by non-voided settlements. */
   def paidIn(s: Session[F], id: DocumentId): F[(Long, Long)]
   def paid(id: DocumentId): F[(Long, Long)]
@@ -30,8 +32,10 @@ trait Documents[F[_]] {
 
 object Documents {
 
-  import Codecs.{contactId as contactIdC, document as documentC, documentId as documentIdC,
-                 documentKind as kindC, documentLine as lineC, openItem as openItemC, taxRateId as taxRateIdC}
+  import Codecs.{
+    contactId as contactIdC, document as documentC, documentId as documentIdC,
+    documentKind as kindC, documentLine as lineC, openItem as openItemC, taxRateId as taxRateIdC
+  }
   import skunk.codec.all.{date, int4, int8, varchar}
 
   def make[F[_]: Concurrent](pool: Resource[F, Session[F]]): Documents[F] =

@@ -22,9 +22,11 @@ trait Portfolios[F[_]] {
 
 object Portfolios {
 
-  import Codecs.{modelPortfolio as modelC, modelAllocation as allocC,
-                 modelPortfolioId as modelIdC, portfolio as portfolioC,
-                 portfolioId as portfolioIdC, userId as userIdC}
+  import Codecs.{
+    modelPortfolio as modelC, modelAllocation as allocC,
+    modelPortfolioId as modelIdC, portfolio as portfolioC,
+    portfolioId as portfolioIdC, userId as userIdC
+  }
 
   def make[F[_]: Concurrent](pool: Resource[F, Session[F]]): Portfolios[F] =
     new Portfolios[F] {
@@ -75,9 +77,15 @@ object Portfolios {
                     ${Codecs.userId}, ${Codecs.body.opt}, $timestamptz, $timestamptz)
             RETURNING id, name, strategy, created_by, created_at, updated_at, description""".query(modelC)
         .contramap[ModelPortfolio](m =>
-          (m.id, m.name, m.strategy, m.createdBy, m.description,
-           m.createdAt.atOffset(java.time.ZoneOffset.UTC),
-           m.updatedAt.atOffset(java.time.ZoneOffset.UTC))
+          (
+            m.id,
+            m.name,
+            m.strategy,
+            m.createdBy,
+            m.description,
+            m.createdAt.atOffset(java.time.ZoneOffset.UTC),
+            m.updatedAt.atOffset(java.time.ZoneOffset.UTC)
+          )
         )
 
     val insertAlloc: Command[ModelAllocation] =

@@ -25,8 +25,10 @@ trait Wealth[F[_]] {
 
 object Wealth {
 
-  import Codecs.{altAsset as altC, altAssetId as altIdC, altValuation as valuationC, liability as liabilityC,
-                 liabilityId as liabilityIdC, statement as statementC, userId as userIdC}
+  import Codecs.{
+    altAsset as altC, altAssetId as altIdC, altValuation as valuationC, liability as liabilityC,
+    liabilityId as liabilityIdC, statement as statementC, userId as userIdC
+  }
   import skunk.codec.all.bool
 
   def make[F[_]: Concurrent](pool: Resource[F, Session[F]]): Wealth[F] = new Wealth[F] {

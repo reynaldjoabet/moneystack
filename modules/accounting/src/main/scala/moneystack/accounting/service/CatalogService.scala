@@ -16,6 +16,7 @@ import java.util.UUID
 trait CatalogService[F[_]] {
   def contacts(kind: Option[ContactKind]): F[List[Contact]]
   def createContact(b: CatalogService.NewContact): F[Either[LedgerError, Contact]]
+
   /** The contact of `kind` linked to an app user, created on first use. */
   def contactForUser(kind: ContactKind, userId: UserId, name: Title, email: Option[Email], currency: CurrencyCode): F[Contact]
   def setContactActive(id: ContactId, active: Boolean): F[Option[Contact]]
@@ -56,7 +57,8 @@ object CatalogService {
         for {
           id  <- Async[F].delay(ContactId.assume(UUID.randomUUID()))
           now <- Async[F].delay(Instant.now())
-          c   <- contactRepo.create(Contact(id, b.kind, b.name, b.email, b.currency.getOrElse(posting.baseCurrency), None, active = true, now))
+          c   <-
+            contactRepo.create(Contact(id, b.kind, b.name, b.email, b.currency.getOrElse(posting.baseCurrency), None, active = true, now))
         } yield Right(c)
 
       def contactForUser(kind: ContactKind, userId: UserId, name: Title, email: Option[Email], currency: CurrencyCode): F[Contact] = {
@@ -94,28 +96,40 @@ object CatalogService {
 
           def account(id: AccountId, expected: String)(ok: AccountType => Boolean): Either[LedgerError, AccountId] =
             chart.get(id) match {
-              case None                           => Left(LedgerError.UnknownAccount(id))
-              case Some(a) if !ok(a.accountType)  => Left(LedgerError.WrongAccountType(a.code, expected))
-              case Some(_)                        => Right(id)
+              case None                          => Left(LedgerError.UnknownAccount(id))
+              case Some(a) if !ok(a.accountType) => Left(LedgerError.WrongAccountType(a.code, expected))
+              case Some(_)                       => Right(id)
             }
 
           val resolved: Either[LedgerError, (AccountId, AccountId, Option[AccountId])] = for {
             _       <- Either.cond(!existing.exists(_.sku == b.sku), (), LedgerError.DuplicateCode("item", b.sku.value))
             income  <- account(b.incomeAccountId.getOrElse(SystemAccounts.Sales.id), "income")(_.root == RootType.Income)
             expense <- account(
-                         b.expenseAccountId.getOrElse(if (inventory) SystemAccounts.CostOfGoodsSold.id else SystemAccounts.GeneralExpenses.id),
-                         if (inventory) "cost of sales or expense" else "expense or asset"
-                       )(t => t.root == RootType.Expense || (!inventory && t.root == RootType.Asset))
-            stock   <- if (inventory) account(b.inventoryAccountId.getOrElse(SystemAccounts.Inventory.id), "inventory")(_ == AccountType.Inventory).map(Some(_))
-                       else Right(None)
+              b.expenseAccountId.getOrElse(if (inventory) SystemAccounts.CostOfGoodsSold.id else SystemAccounts.GeneralExpenses.id),
+              if (inventory) "cost of sales or expense" else "expense or asset"
+            )(t => t.root == RootType.Expense || (!inventory && t.root == RootType.Asset))
+            stock <- if (inventory)
+              account(b.inventoryAccountId.getOrElse(SystemAccounts.Inventory.id), "inventory")(_ == AccountType.Inventory).map(Some(_))
+            else Right(None)
           } yield (income, expense, stock)
 
           resolved.traverse { case (income, expense, stock) =>
             for {
               id  <- Async[F].delay(ItemId.assume(UUID.randomUUID()))
               now <- Async[F].delay(Instant.now())
-              i   <- itemRepo.create(Item(id, b.sku, b.name, b.kind, b.sellPriceMinor, b.costPriceMinor,
-                                       income, expense, stock, active = true, now))
+              i   <- itemRepo.create(Item(
+                id,
+                b.sku,
+                b.name,
+                b.kind,
+                b.sellPriceMinor,
+                b.costPriceMinor,
+                income,
+                expense,
+                stock,
+                active = true,
+                now
+              ))
             } yield i
           }
         }

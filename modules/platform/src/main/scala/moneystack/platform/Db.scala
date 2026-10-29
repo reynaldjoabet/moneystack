@@ -17,10 +17,12 @@ final class Db[F[_]: MonadCancelThrow](val pool: Resource[F, Session[F]]) {
 
   /** Runs `f` in a transaction that rolls back when it yields a domain error `E`. */
   def txE[E, A](f: Session[F] => EitherT[F, E, A]): F[Either[E, A]] =
-    tx(s => f(s).value.flatMap {
-      case Left(err) => MonadCancelThrow[F].raiseError[A](Db.Rollback(err))
-      case Right(a)  => MonadCancelThrow[F].pure(a)
-    }).map(_.asRight[E]).recover { case Db.Rollback(err) => Left(err.asInstanceOf[E]) }
+    tx(s =>
+      f(s).value.flatMap {
+        case Left(err) => MonadCancelThrow[F].raiseError[A](Db.Rollback(err))
+        case Right(a)  => MonadCancelThrow[F].pure(a)
+      }
+    ).map(_.asRight[E]).recover { case Db.Rollback(err) => Left(err.asInstanceOf[E]) }
 }
 
 object Db {
