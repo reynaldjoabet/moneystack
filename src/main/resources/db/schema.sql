@@ -1,4 +1,4 @@
--- Wealth management schema (PostgreSQL). Idempotent.
+-- Moneystack app schema (PostgreSQL). Idempotent.
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 

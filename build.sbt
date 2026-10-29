@@ -1,5 +1,5 @@
 ThisBuild / scalaVersion := "3.9.0"
-ThisBuild / organization := "io.wealth"
+ThisBuild / organization := "io.moneystack"
 ThisBuild / version      := "0.1.0"
 
 lazy val commonSettings = Seq(
@@ -26,7 +26,7 @@ lazy val testDeps = Seq(
 lazy val core = (project in file("modules/core"))
   .settings(
     commonSettings,
-    name := "wealth-core",
+    name := "moneystack-core",
     libraryDependencies ++= Seq(
       "io.github.iltotore" %% "iron" % V.iron
     )
@@ -37,7 +37,7 @@ lazy val platform = (project in file("modules/platform"))
   .dependsOn(core)
   .settings(
     commonSettings,
-    name := "wealth-platform",
+    name := "moneystack-platform",
     libraryDependencies ++= Seq(
       "io.github.iltotore" %% "iron-skunk"   % V.iron,
       "io.github.iltotore" %% "iron-circe"   % V.iron,
@@ -53,7 +53,7 @@ lazy val platform = (project in file("modules/platform"))
 lazy val testkit = (project in file("modules/testkit"))
   .settings(
     commonSettings,
-    name := "wealth-testkit",
+    name := "moneystack-testkit",
     libraryDependencies ++= Seq(
       "org.tpolecat"       %% "skunk-core"                % V.skunk,
       "org.typelevel"      %% "munit-cats-effect"         % V.munitCE,
@@ -73,24 +73,24 @@ lazy val featureModule = Seq(
 /** General ledger, sales & purchases, inventory, banking and statements (after bigcapital and Akaunting). */
 lazy val accounting = (project in file("modules/accounting"))
   .dependsOn(platform, testkit % Test)
-  .settings(commonSettings, featureModule, name := "wealth-accounting")
+  .settings(commonSettings, featureModule, name := "moneystack-accounting")
 
 /** Investment tracking, net worth and planning (after Wealthfolio, Picsou and MoneyMatter). */
 lazy val portfolio = (project in file("modules/portfolio"))
   .dependsOn(platform, testkit % Test)
-  .settings(commonSettings, featureModule, name := "wealth-portfolio")
+  .settings(commonSettings, featureModule, name := "moneystack-portfolio")
 
 /** Personal budgeting: wallets, transactions, budgets, schedules, goals, rules (after Cashew, Expense Manager and MoneyMatter). */
 lazy val budget = (project in file("modules/budget"))
   .dependsOn(platform, testkit % Test)
-  .settings(commonSettings, featureModule, name := "wealth-budget")
+  .settings(commonSettings, featureModule, name := "moneystack-budget")
 
 lazy val root = (project in file("."))
   .dependsOn(core, accounting, portfolio, budget)
   .aggregate(core, platform, testkit, accounting, portfolio, budget)
   .settings(
     commonSettings,
-    name := "wealth",
+    name := "moneystack",
     libraryDependencies ++= Seq(
       "io.github.iltotore"    %% "iron"                % V.iron,
       "io.github.iltotore"    %% "iron-skunk"          % V.iron,
