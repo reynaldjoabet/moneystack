@@ -6,6 +6,8 @@ import wealth.external.*
 import wealth.http.*
 import wealth.service.*
 import wealth.accounting.AccountingModule
+import wealth.budget.BudgetModule
+import wealth.portfolio.PortfolioModule
 import wealth.domain.Role
 
 import cats.effect.*
@@ -61,6 +63,8 @@ object Main extends IOApp.Simple {
         books             = AccountingModule.make[IO](pool, cfg.ledger.baseCurrency)
         _                 <- Resource.eval(books.bootstrap)
         accounting        = LedgerAccounting.make[IO](usersR, books)
+        wealthBook        = PortfolioModule.make[IO](pool, cfg.ledger.baseCurrency)
+        budgetBook        = BudgetModule.make[IO](pool, cfg.ledger.baseCurrency)
         portfolioSvc      = PortfolioService.make[IO](portR, holdR, market)
         recommendationSvc = RecommendationService.make[IO](recsR, portR, usersR, telegram, push)
         subscriptionSvc   = SubscriptionService.make[IO](usersR, subsR, gateway, crm, accounting)
@@ -68,7 +72,9 @@ object Main extends IOApp.Simple {
         // ---- HTTP ----
         routes = new Routes[IO](usersR, portR, holdR, recsR, subsR, market,
                                  portfolioSvc, recommendationSvc, subscriptionSvc).routes <+>
-                 books.routes(Principal.withRole[IO](usersR, Role.Accountant))
+                 books.routes(Principal.withRole[IO](usersR, Role.Accountant)) <+>
+                 wealthBook.routes(Principal.known[IO](usersR)) <+>
+                 budgetBook.routes(Principal.known[IO](usersR))
         app    = Logger.httpApp(logHeaders = true, logBody = false)(routes.orNotFound)
 
         host <- Resource.eval(IO.fromOption(Host.fromString(cfg.http.host))(new IllegalArgumentException("bad host")))

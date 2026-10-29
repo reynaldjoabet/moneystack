@@ -19,4 +19,8 @@ object Principal {
   /** The caller's id when they hold `role`. */
   def withRole[F[_]: Sync](users: Users[F], role: Role)(req: Request[F]): F[Option[UserId]] =
     userId(req).flatTraverse(uid => users.find(uid).map(_.filter(_.role == role).map(_.id)))
+
+  /** The caller's id when they are a known user, whatever their role (personal finance features). */
+  def known[F[_]: Sync](users: Users[F])(req: Request[F]): F[Option[UserId]] =
+    userId(req).flatTraverse(uid => users.find(uid).map(_.map(_.id)))
 }

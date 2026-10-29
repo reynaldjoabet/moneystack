@@ -182,5 +182,5 @@ CREATE TABLE IF NOT EXISTS enrollments (
 
 CREATE INDEX IF NOT EXISTS enrollments_user_idx ON enrollments(user_id);
 
--- Accounting tables live in modules/accounting/src/main/resources/db/accounting.sql;
--- apply it after this file.
+-- Module schemas: modules/accounting/src/main/resources/db/accounting.sql,
+-- modules/portfolio/.../db/portfolio.sql and modules/budget/.../db/budget.sql; apply them after this file.
