@@ -74,9 +74,14 @@ lazy val accounting = (project in file("modules/accounting"))
   .dependsOn(platform, testkit % Test)
   .settings(commonSettings, featureModule, name := "wealth-accounting")
 
+/** Investment tracking, net worth and planning (after Wealthfolio, Picsou and MoneyMatter). */
+lazy val portfolio = (project in file("modules/portfolio"))
+  .dependsOn(platform, testkit % Test)
+  .settings(commonSettings, featureModule, name := "wealth-portfolio")
+
 lazy val root = (project in file("."))
-  .dependsOn(core, accounting)
-  .aggregate(core, platform, testkit, accounting)
+  .dependsOn(core, accounting, portfolio)
+  .aggregate(core, platform, testkit, accounting, portfolio)
   .settings(
     commonSettings,
     name := "wealth",
