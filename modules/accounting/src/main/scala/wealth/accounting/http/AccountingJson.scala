@@ -6,6 +6,7 @@ import wealth.accounting.service.*
 
 import io.circe.*
 import io.circe.generic.semiauto.*
+import io.circe.syntax.*
 import io.github.iltotore.iron.circe.given
 
 import java.time.LocalDate
@@ -134,4 +135,42 @@ object AccountingJson {
 
   final case class CategorizeBody(accountId: AccountId, contactId: Option[ContactId])
   given Decoder[CategorizeBody] = deriveDecoder
+
+  // ---- workflow & cash ----
+  given Codec[Every]                = enumCodec(Every.render, Every.parse)
+  given Codec[DocumentEventKind]    = enumCodec(DocumentEventKind.render, DocumentEventKind.parse)
+  given Codec[ReconciliationStatus] = enumCodec(ReconciliationStatus.render, ReconciliationStatus.parse)
+
+  given Encoder[TradeService.NewDocument] = {
+    import WorkflowService.Payload.given
+    summon[Codec[TradeService.NewDocument]]
+  }
+  given Encoder[Draft] = Encoder.instance(d => Json.obj("id" -> d.id.asJson, "kind" -> d.kind.asJson, "contactId" -> d.contactId.asJson,
+                                                          "createdBy" -> d.createdBy.asJson, "createdAt" -> d.createdAt.asJson, "updatedAt" -> d.updatedAt.asJson))
+  given Encoder[WorkflowService.DraftView]     = deriveEncoder
+  given Encoder[DocumentEvent]                 = deriveEncoder
+  given Encoder[Recurring] = Encoder.instance(r => Json.obj(
+    "id" -> r.id.asJson, "kind" -> r.kind.asJson, "contactId" -> r.contactId.asJson, "every" -> r.every.asJson, "interval" -> r.interval.asJson,
+    "startDate" -> r.startDate.asJson, "endDate" -> r.endDate.asJson, "maxOccurrences" -> r.maxOccurrences.asJson,
+    "issued" -> r.nextIndex.asJson, "active" -> r.active.asJson, "createdAt" -> r.createdAt.asJson))
+  given Encoder[WorkflowService.RecurringView] = deriveEncoder
+  given Encoder[WorkflowService.RunReport] = Encoder.instance(r => Json.obj(
+    "issued" -> r.issued.asJson,
+    "failed" -> r.failed.map { case (id, e) => Json.obj("recurringId" -> id.asJson, "error" -> e.asJson) }.asJson))
+  given Encoder[Reconciliation]     = deriveEncoder
+  given Encoder[ReconLine]          = deriveEncoder
+  given Encoder[ReconciliationView] = deriveEncoder
+
+  given Decoder[WorkflowService.NewRecurring]  = deriveDecoder
+  given Decoder[CashService.NewMovement]       = deriveDecoder
+  given Decoder[CashService.NewTransfer]       = deriveDecoder
+  given Decoder[CashService.NewReconciliation] = deriveDecoder
+
+  final case class NoteBody(note: Option[Body])
+  given Decoder[NoteBody] = deriveDecoder
+
+  final case class LineRef(entryId: JournalEntryId, lineNo: Int)
+  given Decoder[LineRef] = deriveDecoder
+  final case class ClearBody(lines: List[LineRef], cleared: Boolean)
+  given Decoder[ClearBody] = deriveDecoder
 }

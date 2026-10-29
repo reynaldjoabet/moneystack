@@ -40,10 +40,12 @@ abstract class RouteSupport[F[_]: Async](auth: Request[F] => F[Option[UserId]]) 
     import LedgerError.*
     val body = errorBody(err)
     err match {
-      case EntryNotFound(_) | DocumentNotFound(_) | SettlementNotFound(_) | BankTransactionNotFound(_) => NotFound(body)
+      case EntryNotFound(_) | DocumentNotFound(_) | SettlementNotFound(_) | BankTransactionNotFound(_) |
+           DraftNotFound(_) | RecurringNotFound(_) | ReconciliationNotFound(_)                          => NotFound(body)
       case PeriodLocked(_, _) | AlreadyReversed(_, _) | DuplicateAccountCode(_) | DuplicateCode(_, _) |
            DuplicatePosting(_, _) | AlreadyVoided(_) | DocumentHasPayments | InvalidTransactionState(_, _) |
-           InsufficientStock(_, _, _) | StockAlreadyConsumed(_, _, _) | OverAllocation(_, _, _)  => Conflict(body)
+           InsufficientStock(_, _, _) | StockAlreadyConsumed(_, _, _) | OverAllocation(_, _, _) |
+           ReconciliationClosed | ReconciliationUnbalanced(_)                                  => Conflict(body)
       case _                                                                                     => BadRequest(body)
     }
   }

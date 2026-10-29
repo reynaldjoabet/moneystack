@@ -140,4 +140,27 @@ object Codecs {
       } { r =>
         (r.id, r.name, r.priority, r.applyTo, r.conjunction, r.accountId, r.contactId, r.autoCategorize, r.active, r.createdAt)
       }
+
+  // ---- workflow & reconciliation ----
+
+  val draftId: Codec[DraftId]                   = uuid.imap(DraftId.assume)(_.value)
+  val recurringId: Codec[RecurringId]           = uuid.imap(RecurringId.assume)(_.value)
+  val reconciliationId: Codec[ReconciliationId] = uuid.imap(ReconciliationId.assume)(_.value)
+
+  val eventKind: Codec[DocumentEventKind]   = varchar(16).eimap(DocumentEventKind.parse)(DocumentEventKind.render)
+  val every: Codec[Every]                   = varchar(8).eimap(Every.parse)(Every.render)
+  val reconStatus: Codec[ReconciliationStatus] = varchar(8).eimap(ReconciliationStatus.parse)(ReconciliationStatus.render)
+
+  val draft: Codec[Draft] =
+    (draftId *: documentKind *: contactId *: text *: userId *: instant *: instant).to[Draft]
+
+  val documentEvent: Codec[DocumentEvent] =
+    (documentId *: eventKind *: body.opt *: userId.opt *: instant).to[DocumentEvent]
+
+  val recurring: Codec[Recurring] =
+    (recurringId *: documentKind *: contactId *: text *: every *: int4 *: date *: date.opt *: int4.opt *: int4 *: bool *:
+      userId *: instant).to[Recurring]
+
+  val reconciliation: Codec[Reconciliation] =
+    (reconciliationId *: accountId *: date *: date *: int8 *: int8 *: reconStatus *: userId *: instant *: instant.opt).to[Reconciliation]
 }

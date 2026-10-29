@@ -2,7 +2,7 @@ package wealth.accounting.service
 
 import wealth.domain.*
 import wealth.accounting.domain.*
-import wealth.accounting.db.{Contacts, Documents, Items, Journals, Settlements, TaxRates}
+import wealth.accounting.db.{Contacts, Documents, Items, Journals, Office, Settlements, TaxRates}
 import wealth.platform.Db
 import wealth.accounting.service.LedgerService.SystemAccounts
 
@@ -158,7 +158,8 @@ object TradeService {
       itemRepo: Items[F],
       taxRateRepo: TaxRates[F],
       documentRepo: Documents[F],
-      settlementRepo: Settlements[F]
+      settlementRepo: Settlements[F],
+      office: Office[F]
   ): TradeService[F] = new TradeService[F] {
 
     private type R[A] = EitherT[F, LedgerError, A]
@@ -190,6 +191,7 @@ object TradeService {
             id         <- lift(Async[F].delay(DocumentId.assume(UUID.randomUUID())))
             now        <- lift(Async[F].delay(Instant.now()))
             details    <- EitherT(db.txE(s => issue(s, kind, id, c, b, due, rate, lines, itemMap, chart, by, now)))
+            _          <- lift(office.addEvent(DocumentEvent(id, DocumentEventKind.Issued, None, Some(by), now)))
           } yield details).value
       }
 
@@ -307,7 +309,8 @@ object TradeService {
             _     <- lift(documentRepo.markVoided(s, id, date))
             lines <- lift(documentRepo.linesIn(s, id))
           } yield DocumentDetails(doc.copy(voidedOn = Some(date)), lines, AmountMinor.assume(0L), DocumentStatus.Void)
-        }
+        }.flatTap(_.traverse_(_ => Async[F].delay(Instant.now()).flatMap(now =>
+          office.addEvent(DocumentEvent(id, DocumentEventKind.Voided, Body.option(s"voided on $date"), Some(by), now)))))
       }
 
     /** Undoes the stock moves `doc` made. A bill's stock must still be on hand at its received value. */
@@ -347,6 +350,8 @@ object TradeService {
           id      <- lift(Async[F].delay(SettlementId.assume(UUID.randomUUID())))
           now     <- lift(Async[F].delay(Instant.now()))
           details <- EitherT(db.txE(s => record(s, kind, id, c, b, rate, chart, by, now)))
+          _       <- lift(details.allocations.traverse_(a => office.addEvent(DocumentEvent(a.documentId, DocumentEventKind.Payment,
+                       Body.option(s"${details.settlement.number}: ${a.amountMinor.value}"), Some(by), now))))
         } yield details).value
       }
 

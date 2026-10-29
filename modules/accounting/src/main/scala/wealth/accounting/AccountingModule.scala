@@ -2,7 +2,7 @@ package wealth.accounting
 
 import wealth.domain.*
 import wealth.accounting.db.*
-import wealth.accounting.http.{BankingRoutes, LedgerRoutes, TradeRoutes}
+import wealth.accounting.http.{BankingRoutes, LedgerRoutes, TradeRoutes, WorkflowRoutes}
 import wealth.accounting.service.*
 import wealth.platform.Db
 
@@ -16,7 +16,9 @@ final class AccountingModule[F[_]: Async] private (
     val ledger: LedgerService[F],
     val catalog: CatalogService[F],
     val trade: TradeService[F],
-    val banking: BankingService[F]
+    val banking: BankingService[F],
+    val workflow: WorkflowService[F],
+    val cash: CashService[F]
 ) {
 
   /** Creates the system chart of accounts. Run once at startup. */
@@ -26,7 +28,8 @@ final class AccountingModule[F[_]: Async] private (
   def routes(auth: Request[F] => F[Option[UserId]]): HttpRoutes[F] =
     new LedgerRoutes[F](auth, ledger).routes <+>
       new TradeRoutes[F](auth, catalog, trade).routes <+>
-      new BankingRoutes[F](auth, banking).routes
+      new BankingRoutes[F](auth, banking).routes <+>
+      new WorkflowRoutes[F](auth, workflow, cash).routes
 }
 
 object AccountingModule {
@@ -42,13 +45,17 @@ object AccountingModule {
     val documents   = Documents.make[F](pool)
     val settlements = Settlements.make[F](pool)
     val banking     = Banking.make[F](pool)
+    val office      = Office.make[F](pool)
     val posting     = new Posting[F](baseCurrency, accounts, journals, rates)
+    val trade       = TradeService.make[F](db, posting, journals, contacts, items, taxRates, documents, settlements, office)
 
     new AccountingModule[F](
       LedgerService.make[F](db, posting, accounts, journals, rates),
       CatalogService.make[F](posting, contacts, taxRates, items),
-      TradeService.make[F](db, posting, journals, contacts, items, taxRates, documents, settlements),
-      BankingService.make[F](db, posting, banking, contacts)
+      trade,
+      BankingService.make[F](db, posting, banking, contacts),
+      WorkflowService.make[F](db, trade, contacts, documents, office),
+      CashService.make[F](db, posting, contacts, office)
     )
   }
 }

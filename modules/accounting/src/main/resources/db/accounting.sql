@@ -54,7 +54,8 @@ CREATE TABLE IF NOT EXISTS journal_entries (
     exchange_rate   NUMERIC(24, 10) NOT NULL CHECK (exchange_rate > 0),
     source          VARCHAR(24)     NOT NULL CHECK (source IN (
                         'manual','reversal','payment','invoice','bill','receipt','bill_payment',
-                        'fx_realized','inventory_issue','inventory_adjustment','bank_transaction')),
+                        'fx_realized','inventory_issue','inventory_adjustment','bank_transaction',
+                        'money_in','money_out','transfer')),
     source_id       UUID,
     created_by      UUID,
     created_at      TIMESTAMPTZ     NOT NULL DEFAULT now(),
@@ -62,6 +63,13 @@ CREATE TABLE IF NOT EXISTS journal_entries (
 );
 
 CREATE INDEX IF NOT EXISTS journal_entries_date_idx ON journal_entries(entry_date, created_at);
+
+-- Databases created before direct income/expense and transfers existed: widen the allowed sources.
+ALTER TABLE journal_entries DROP CONSTRAINT IF EXISTS journal_entries_source_check;
+ALTER TABLE journal_entries ADD CONSTRAINT journal_entries_source_check CHECK (source IN (
+    'manual','reversal','payment','invoice','bill','receipt','bill_payment',
+    'fx_realized','inventory_issue','inventory_adjustment','bank_transaction',
+    'money_in','money_out','transfer'));
 
 CREATE TABLE IF NOT EXISTS journal_lines (
     entry_id           UUID        NOT NULL REFERENCES journal_entries(id) ON DELETE RESTRICT,
@@ -329,3 +337,80 @@ CREATE TABLE IF NOT EXISTS bank_transactions (
 );
 
 CREATE INDEX IF NOT EXISTS bank_transactions_status_idx ON bank_transactions(account_id, status, tx_date);
+
+-- ---------- Document workflow (drafts, history, recurring) ----------
+
+-- Unposted, unnumbered invoices and bills; issuing one creates the document and deletes the draft.
+CREATE TABLE IF NOT EXISTS document_drafts (
+    id          UUID PRIMARY KEY,
+    kind        VARCHAR(8)  NOT NULL CHECK (kind IN ('invoice','bill')),
+    contact_id  UUID        NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+    payload     TEXT        NOT NULL,
+    created_by  UUID        NOT NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS document_events (
+    id           BIGSERIAL PRIMARY KEY,
+    document_id  UUID        NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+    kind         VARCHAR(16) NOT NULL CHECK (kind IN ('issued','sent','payment','reminder','voided')),
+    note         TEXT,
+    by_user      UUID,
+    at           TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS document_events_document_idx ON document_events(document_id, at);
+
+CREATE TABLE IF NOT EXISTS recurring_documents (
+    id               UUID PRIMARY KEY,
+    kind             VARCHAR(8)  NOT NULL CHECK (kind IN ('invoice','bill')),
+    contact_id       UUID        NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+    payload          TEXT        NOT NULL,
+    every            VARCHAR(8)  NOT NULL CHECK (every IN ('daily','weekly','monthly','yearly')),
+    every_n          INT         NOT NULL DEFAULT 1 CHECK (every_n BETWEEN 1 AND 366),
+    start_date       DATE        NOT NULL,
+    end_date         DATE,
+    max_occurrences  INT CHECK (max_occurrences > 0),
+    next_index       INT         NOT NULL DEFAULT 0 CHECK (next_index >= 0),
+    active           BOOLEAN     NOT NULL DEFAULT true,
+    created_by       UUID        NOT NULL,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CHECK (end_date IS NULL OR end_date >= start_date)
+);
+
+-- One document per occurrence, however often the scheduler runs.
+CREATE TABLE IF NOT EXISTS recurring_runs (
+    recurring_id  UUID NOT NULL REFERENCES recurring_documents(id) ON DELETE CASCADE,
+    occurrence    INT  NOT NULL,
+    document_id   UUID NOT NULL REFERENCES documents(id) ON DELETE RESTRICT,
+    PRIMARY KEY (recurring_id, occurrence)
+);
+
+-- ---------- Bank reconciliation ----------
+
+CREATE TABLE IF NOT EXISTS reconciliations (
+    id             UUID PRIMARY KEY,
+    account_id     UUID        NOT NULL REFERENCES ledger_accounts(id) ON DELETE RESTRICT,
+    period_start   DATE        NOT NULL,
+    period_end     DATE        NOT NULL CHECK (period_end >= period_start),
+    opening_minor  BIGINT      NOT NULL,
+    closing_minor  BIGINT      NOT NULL,
+    status         VARCHAR(8)  NOT NULL CHECK (status IN ('open','closed')),
+    created_by     UUID        NOT NULL,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    closed_at      TIMESTAMPTZ,
+    CHECK ((status = 'closed') = (closed_at IS NOT NULL))
+);
+
+-- At most one open reconciliation per account.
+CREATE UNIQUE INDEX IF NOT EXISTS reconciliations_open_idx ON reconciliations(account_id) WHERE status = 'open';
+
+-- A ledger line is ticked off in at most one reconciliation.
+CREATE TABLE IF NOT EXISTS reconciled_lines (
+    reconciliation_id  UUID NOT NULL REFERENCES reconciliations(id) ON DELETE CASCADE,
+    entry_id           UUID NOT NULL,
+    line_no            INT  NOT NULL,
+    PRIMARY KEY (entry_id, line_no),
+    FOREIGN KEY (entry_id, line_no) REFERENCES journal_lines(entry_id, line_no) ON DELETE RESTRICT
+);

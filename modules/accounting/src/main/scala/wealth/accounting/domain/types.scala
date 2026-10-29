@@ -37,6 +37,15 @@ object BankTransactionId extends RefinedType[UUID, Pure] {}
 type BankRuleId        = BankRuleId.T
 object BankRuleId        extends RefinedType[UUID, Pure] {}
 
+type DraftId           = DraftId.T
+object DraftId           extends RefinedType[UUID, Pure] {}
+
+type RecurringId       = RecurringId.T
+object RecurringId       extends RefinedType[UUID, Pure] {}
+
+type ReconciliationId  = ReconciliationId.T
+object ReconciliationId  extends RefinedType[UUID, Pure] {}
+
 // ---------- Scalars ----------
 
 /** Chart-of-accounts code: 3-6 digits with an optional sub-account suffix (e.g. 4000, 4000-01). */

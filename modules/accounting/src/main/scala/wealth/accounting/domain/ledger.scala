@@ -91,6 +91,9 @@ enum JournalSource(val key: String) {
   case InventoryIssue      extends JournalSource("inventory_issue")
   case InventoryAdjustment extends JournalSource("inventory_adjustment")
   case BankTransaction     extends JournalSource("bank_transaction")
+  case MoneyIn             extends JournalSource("money_in")
+  case MoneyOut            extends JournalSource("money_out")
+  case Transfer            extends JournalSource("transfer")
 }
 object JournalSource {
   def parse(s: String): Either[String, JournalSource] =
@@ -218,6 +221,14 @@ object LedgerError {
   final case class BankTransactionNotFound(id: BankTransactionId)                  extends LedgerError
   final case class InvalidTransactionState(status: String, action: String)          extends LedgerError
   final case class InvalidRule(reason: String)                                      extends LedgerError
+  // drafts, recurring documents, cash and reconciliation
+  final case class DraftNotFound(id: DraftId)                                      extends LedgerError
+  final case class RecurringNotFound(id: RecurringId)                              extends LedgerError
+  final case class InvalidDraft(reason: String)                                    extends LedgerError
+  final case class ReconciliationNotFound(id: ReconciliationId)                    extends LedgerError
+  case object ReconciliationClosed                                                 extends LedgerError
+  final case class ReconciliationUnbalanced(differenceMinor: Long)                  extends LedgerError
+  final case class LineNotOnAccount(entryId: JournalEntryId, lineNo: Int)           extends LedgerError
 }
 
 // ---------- Rules ----------
