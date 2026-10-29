@@ -64,7 +64,8 @@ lazy val testkit = (project in file("modules/testkit"))
 
 lazy val featureModule = Seq(
   libraryDependencies ++= Seq(
-    "io.circe" %% "circe-generic" % V.circe
+    "io.circe" %% "circe-generic" % V.circe,
+    "io.circe" %% "circe-parser"  % V.circe
   ) ++ testDeps,
   Test / fork := true
 )
@@ -79,9 +80,14 @@ lazy val portfolio = (project in file("modules/portfolio"))
   .dependsOn(platform, testkit % Test)
   .settings(commonSettings, featureModule, name := "wealth-portfolio")
 
+/** Personal budgeting: wallets, transactions, budgets, schedules, goals, rules (after Cashew, Expense Manager and MoneyMatter). */
+lazy val budget = (project in file("modules/budget"))
+  .dependsOn(platform, testkit % Test)
+  .settings(commonSettings, featureModule, name := "wealth-budget")
+
 lazy val root = (project in file("."))
-  .dependsOn(core, accounting, portfolio)
-  .aggregate(core, platform, testkit, accounting, portfolio)
+  .dependsOn(core, accounting, portfolio, budget)
+  .aggregate(core, platform, testkit, accounting, portfolio, budget)
   .settings(
     commonSettings,
     name := "wealth",
