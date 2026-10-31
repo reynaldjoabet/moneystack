@@ -24,19 +24,22 @@ final class PortfolioModule[F[_]: Async] private (
 
 object PortfolioModule {
 
+  /** Flyway migrations under `db/migration/portfolio`. */
+  val migrations: String = "portfolio"
+
   /** `defaultCurrency` is the reporting currency when a request doesn't name one. */
   def make[F[_]: Async](pool: Resource[F, Session[F]], defaultCurrency: CurrencyCode): PortfolioModule[F] = {
-    val accounts   = Accounts.make[F](pool)
-    val market     = Market.make[F](pool)
-    val activities = Activities.make[F](pool)
-    val plans      = Plans.make[F](pool)
-    val wealth     = Wealth.make[F](pool)
-    val portfolio  = PortfolioService.make[F](accounts, market, activities, plans)
+    val accounts     = Accounts.make[F](pool)
+    val market       = Market.make[F](pool)
+    val activities   = Activities.make[F](pool)
+    val plans        = Plans.make[F](pool)
+    val balanceSheet = BalanceSheet.make[F](pool)
+    val portfolio    = PortfolioService.make[F](accounts, market, activities, plans)
     new PortfolioModule[F](
       defaultCurrency,
       portfolio,
       PlanningService.make[F](portfolio, accounts, plans),
-      NetWorthService.make[F](portfolio, accounts, market, wealth)
+      NetWorthService.make[F](portfolio, accounts, market, balanceSheet)
     )
   }
 }

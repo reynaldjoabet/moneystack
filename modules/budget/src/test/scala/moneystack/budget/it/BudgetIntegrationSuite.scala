@@ -15,7 +15,7 @@ import java.util.UUID
 
 class BudgetIntegrationSuite extends moneystack.testkit.PostgresSuite[BudgetModule[IO]] {
 
-  def schemas: List[String] = List("db/budget.sql")
+  def migrations: List[String] = List(BudgetModule.migrations)
 
   def build(pool: Resource[IO, Session[IO]]): Resource[IO, BudgetModule[IO]] =
     Resource.eval(IO(BudgetModule.make[IO](pool, CurrencyCode.USD)))

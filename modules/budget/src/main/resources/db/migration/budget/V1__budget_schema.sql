@@ -1,4 +1,5 @@
--- Budget module schema (PostgreSQL). Idempotent; self-contained in the
+-- Budget module schema (PostgreSQL), applied by Flyway. Never edit once
+-- deployed: add a new version. Idempotent; self-contained in the
 -- `budget` schema. `owner_id` / `user_id` / `created_by` hold app user ids
 -- without foreign keys. Amounts are minor units of the wallet's currency.
 

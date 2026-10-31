@@ -14,7 +14,7 @@ import java.util.UUID
 
 class PortfolioIntegrationSuite extends moneystack.testkit.PostgresSuite[PortfolioModule[IO]] {
 
-  def schemas: List[String] = List("db/portfolio.sql")
+  def migrations: List[String] = List(PortfolioModule.migrations)
 
   def build(pool: Resource[IO, Session[IO]]): Resource[IO, PortfolioModule[IO]] =
     Resource.eval(IO(PortfolioModule.make[IO](pool, CurrencyCode.USD)))

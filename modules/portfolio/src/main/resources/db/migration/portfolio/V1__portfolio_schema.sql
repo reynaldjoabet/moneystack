@@ -1,4 +1,5 @@
--- Portfolio module schema (PostgreSQL). Idempotent; self-contained in the
+-- Portfolio module schema (PostgreSQL), applied by Flyway. Never edit once
+-- deployed: add a new version. Idempotent; self-contained in the
 -- `portfolio` schema. `owner_id` holds app user ids without foreign keys.
 
 CREATE SCHEMA IF NOT EXISTS portfolio;

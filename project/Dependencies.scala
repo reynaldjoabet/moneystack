@@ -12,6 +12,9 @@ object Dependencies {
     val munit          = "1.3.6"
     val munitCE        = "2.2.1"
     val testcontainers = "2.0.5"
+    val flyway         = "13.11.1"
+    val postgresJdbc   = "42.7.14"
+    val ciris          = "3.15.2"
   }
 
 }

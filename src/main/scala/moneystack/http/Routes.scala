@@ -63,9 +63,6 @@ final class Routes[F[_]: Async](
 
   val routes: HttpRoutes[F] = HttpRoutes.of[F] {
 
-    case GET -> Root / "health" =>
-      Ok(Map("status" -> "ok").asJson)
-
     // ---- auth ----
 
     case req @ POST -> Root / "auth" / "signup" =>

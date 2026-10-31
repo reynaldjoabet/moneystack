@@ -1,4 +1,5 @@
--- Accounting module schema (PostgreSQL). Idempotent; self-contained (no
+-- Accounting module schema (PostgreSQL), applied by Flyway. Never edit once
+-- deployed: add a new version. Idempotent; self-contained (no
 -- references to app tables). `created_by` / `updated_by` / `user_id` hold app
 -- user ids without foreign keys so the module can be deployed on its own.
 

@@ -1,6 +1,6 @@
 package moneystack.domain
 
-import java.time.{Instant, LocalDate, LocalDateTime}
+import java.time.{Instant, LocalDate}
 
 // ---------- User & profile ----------
 

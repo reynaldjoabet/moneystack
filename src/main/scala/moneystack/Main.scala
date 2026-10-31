@@ -9,6 +9,7 @@ import moneystack.accounting.AccountingModule
 import moneystack.budget.BudgetModule
 import moneystack.portfolio.PortfolioModule
 import moneystack.domain.Role
+import moneystack.platform.Migrations
 
 import cats.effect.*
 import cats.syntax.all.*
@@ -25,6 +26,10 @@ object Main extends IOApp.Simple {
   given TracerProvider[IO] = TracerProvider.noop[IO]
   given MeterProvider[IO]  = MeterProvider.noop[IO]
 
+  /** The app's own migrations, then each module's: the order they are applied in. */
+  val migrations: List[String] =
+    List("app", AccountingModule.migrations, PortfolioModule.migrations, BudgetModule.migrations)
+
   def run: IO[Unit] = {
     val logger = Slf4jLogger.getLogger[IO]
 
@@ -32,13 +37,19 @@ object Main extends IOApp.Simple {
       for {
         cfg <- Resource.eval(AppConfig.load[IO])
 
+        _ <- Resource.eval(
+          if (cfg.db.migrateOnStart)
+            Migrations.run[IO](cfg.db.migrationTarget, migrations).flatMap(n => logger.info(s"Applied $n migration(s)"))
+          else logger.info("Skipping migrations: DB_MIGRATE_ON_START=false")
+        )
+
         pool <- {
           val base = Session.Builder[IO]
             .withHost(cfg.db.host)
             .withPort(cfg.db.port)
             .withDatabase(cfg.db.database)
           cfg.db.password
-            .fold(base.withUser(cfg.db.user))(base.withUserAndPassword(cfg.db.user, _))
+            .fold(base.withUser(cfg.db.user))(p => base.withUserAndPassword(cfg.db.user, p.value))
             .pooled(cfg.db.poolMax)
         }
 
@@ -71,17 +82,18 @@ object Main extends IOApp.Simple {
 
         // ---- HTTP ----
         routes =
-          new Routes[IO](
-            usersR,
-            portR,
-            holdR,
-            recsR,
-            subsR,
-            market,
-            portfolioSvc,
-            recommendationSvc,
-            subscriptionSvc
-          ).routes <+>
+          new HealthRoutes[IO](pool).routes <+>
+            new Routes[IO](
+              usersR,
+              portR,
+              holdR,
+              recsR,
+              subsR,
+              market,
+              portfolioSvc,
+              recommendationSvc,
+              subscriptionSvc
+            ).routes <+>
             books.routes(Principal.withRole[IO](usersR, Role.Accountant)) <+>
             portfolioBook.routes(Principal.known[IO](usersR)) <+>
             budgetBook.routes(Principal.known[IO](usersR))

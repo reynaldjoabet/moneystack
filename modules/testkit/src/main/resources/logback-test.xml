@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Logging for every test run. testkit is on each module's (and the root app's) Test classpath, so this one
+  file applies everywhere, and logback picks logback-test.xml over the app's main logback.xml.
+-->
+<configuration>
+  <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+    <encoder>
+      <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+    </encoder>
+  </appender>
+
+  <!-- Testcontainers, the Docker client and Flyway are chatty at INFO; show them only on problems. -->
+  <logger name="org.testcontainers" level="WARN"/>
+  <logger name="tc" level="WARN"/>
+  <logger name="com.github.dockerjava" level="WARN"/>
+  <logger name="org.flywaydb" level="WARN"/>
+  <logger name="ch.qos.logback" level="WARN"/>
+
+  <root level="WARN">
+    <appender-ref ref="STDOUT"/>
+  </root>
+</configuration>

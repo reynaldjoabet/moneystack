@@ -1,10 +1,11 @@
 package moneystack.testkit
 
+import moneystack.platform.Migrations
+
 import cats.effect.*
-import cats.syntax.all.*
 import munit.CatsEffectSuite
 import org.testcontainers.postgresql.PostgreSQLContainer
-import org.testcontainers.utility.{DockerImageName, MountableFile}
+import org.testcontainers.utility.DockerImageName
 import org.typelevel.otel4s.metrics.MeterProvider
 import org.typelevel.otel4s.trace.TracerProvider
 import skunk.Session
@@ -12,7 +13,7 @@ import skunk.implicits.*
 
 import scala.concurrent.duration.*
 
-/** Throwaway Postgres containers with a module's schema applied, as a deployment would apply it. */
+/** Throwaway Postgres containers migrated the way the app migrates at startup. */
 object Postgres {
 
   private given TracerProvider[IO] = TracerProvider.noop[IO]
@@ -25,22 +26,11 @@ object Postgres {
       c
     })(c => IO.blocking(c.stop()))
 
-  /** Runs one classpath SQL resource through psql inside the container. */
-  private def applyScript(c: PostgreSQLContainer, resource: String): IO[Unit] = IO.blocking {
-    val target = "/tmp/" + resource.replace('/', '_')
-    c.copyFileToContainer(MountableFile.forClasspathResource(resource), target)
-    val r = c.execInContainer("psql", "-v", "ON_ERROR_STOP=1", "-q", "-U", c.getUsername, "-d", c.getDatabaseName, "-f", target)
-    if (r.getExitCode != 0) throw new IllegalStateException(s"$resource failed: ${r.getStderr}")
-  }
-
-  /**
-   * A session pool over a fresh database with `schemas` applied in order —
-   * twice, since every schema script must be idempotent.
-   */
-  def pool(schemas: List[String]): Resource[IO, Resource[IO, Session[IO]]] =
+  /** A session pool over a fresh database with the `migrations` of each named module applied, in order. */
+  def pool(migrations: List[String]): Resource[IO, Resource[IO, Session[IO]]] =
     for {
       c    <- container
-      _    <- Resource.eval((schemas ++ schemas).traverse_(applyScript(c, _)))
+      _    <- Resource.eval(Migrations.run[IO](Migrations.Target(c.getJdbcUrl, c.getUsername, Some(c.getPassword)), migrations))
       pool <- Session.Builder[IO]
         .withHost(c.getHost)
         .withPort(c.getMappedPort(5432).intValue)
@@ -55,13 +45,13 @@ abstract class PostgresSuite[Env] extends CatsEffectSuite {
 
   override def munitIOTimeout: Duration = 3.minutes
 
-  /** Classpath schema scripts, applied in order. */
-  def schemas: List[String]
+  /** Modules whose Flyway migrations to apply, in order (see `Migrations`). */
+  def migrations: List[String]
 
   /** Builds the module under test over the pool. */
   def build(pool: Resource[IO, Session[IO]]): Resource[IO, Env]
 
-  val db = ResourceSuiteLocalFixture("postgres", Postgres.pool(schemas).flatMap(p => build(p).map(p -> _)))
+  val db = ResourceSuiteLocalFixture("postgres", Postgres.pool(migrations).flatMap(p => build(p).map(p -> _)))
 
   override def munitFixtures = List(db)
 

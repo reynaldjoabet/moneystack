@@ -1,4 +1,6 @@
--- Moneystack app schema (PostgreSQL). Idempotent.
+-- Moneystack app schema (PostgreSQL), applied by Flyway at startup.
+-- Never edit this file once deployed: add V2__<title>.sql instead. Kept idempotent
+-- so databases created before Flyway can adopt it.
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
@@ -181,6 +183,3 @@ CREATE TABLE IF NOT EXISTS enrollments (
 );
 
 CREATE INDEX IF NOT EXISTS enrollments_user_idx ON enrollments(user_id);
-
--- Module schemas: modules/accounting/src/main/resources/db/accounting.sql,
--- modules/portfolio/.../db/portfolio.sql and modules/budget/.../db/budget.sql; apply them after this file.

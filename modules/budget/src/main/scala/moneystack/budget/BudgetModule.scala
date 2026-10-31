@@ -25,6 +25,9 @@ final class BudgetModule[F[_]: Async] private (
 
 object BudgetModule {
 
+  /** Flyway migrations under `db/migration/budget`. */
+  val migrations: String = "budget"
+
   def make[F[_]: Async](pool: Resource[F, Session[F]], defaultCurrency: CurrencyCode): BudgetModule[F] = {
     val wallets      = Wallets.make[F](pool)
     val catalog      = Catalog.make[F](pool)

@@ -2,7 +2,7 @@ package moneystack.portfolio.service
 
 import moneystack.domain.*
 import moneystack.portfolio.domain.*
-import moneystack.portfolio.db.{Accounts, Market, Wealth}
+import moneystack.portfolio.db.{Accounts, BalanceSheet, Market}
 
 import cats.data.EitherT
 import cats.effect.*
@@ -100,13 +100,18 @@ object NetWorthService {
       gross * a.ownershipBps.value / 10_000
     }
 
-  def make[F[_]: Async](portfolio: PortfolioService[F], accounts: Accounts[F], market: Market[F], wealth: Wealth[F]): NetWorthService[F] =
+  def make[F[_]: Async](
+      portfolio: PortfolioService[F],
+      accounts: Accounts[F],
+      market: Market[F],
+      balanceSheet: BalanceSheet[F]
+  ): NetWorthService[F] =
     new NetWorthService[F] {
 
       private type R[A] = EitherT[F, PortfolioError, A]
       private def lift[A](fa: F[A]): R[A] = EitherT.liftF(fa)
 
-      def altAssets(owner: UserId): F[List[AltAsset]] = wealth.assets(owner)
+      def altAssets(owner: UserId): F[List[AltAsset]] = balanceSheet.assets(owner)
 
       def createAltAsset(owner: UserId, b: NewAltAsset): F[Either[PortfolioError, AltAsset]] = {
         val checked = for {
@@ -130,7 +135,7 @@ object NetWorthService {
           for {
             id  <- Async[F].delay(AltAssetId.assume(UUID.randomUUID()))
             now <- Async[F].delay(Instant.now())
-            a   <- wealth.createAsset(AltAsset(
+            a   <- balanceSheet.createAsset(AltAsset(
               id,
               owner,
               b.kind,
@@ -150,19 +155,20 @@ object NetWorthService {
         }
       }
 
-      def setAltAssetActive(owner: UserId, id: AltAssetId, active: Boolean): F[Option[AltAsset]] = wealth.setAssetActive(owner, id, active)
+      def setAltAssetActive(owner: UserId, id: AltAssetId, active: Boolean): F[Option[AltAsset]] =
+        balanceSheet.setAssetActive(owner, id, active)
 
       def addValuation(owner: UserId, v: AltValuation): F[Either[PortfolioError, AltValuation]] =
-        wealth.assets(owner).flatMap { as =>
+        balanceSheet.assets(owner).flatMap { as =>
           if (!as.exists(_.id == v.assetId)) Async[F].pure(Left(PortfolioError.AltAssetNotFound(v.assetId)))
           else if (v.value < 0) Async[F].pure(Left(PortfolioError.InvalidInput("a valuation must not be negative")))
-          else wealth.upsertValuation(v).as(Right(v))
+          else balanceSheet.upsertValuation(v).as(Right(v))
         }
 
-      def liabilities(owner: UserId): F[List[Liability]] = wealth.liabilities(owner)
+      def liabilities(owner: UserId): F[List[Liability]] = balanceSheet.liabilities(owner)
 
       def createLiability(owner: UserId, b: NewLiability): F[Either[PortfolioError, Liability]] =
-        wealth.assets(owner).flatMap { as =>
+        balanceSheet.assets(owner).flatMap { as =>
           val checked = for {
             _ <- Either.cond(b.principal > 0, (), PortfolioError.InvalidInput("the principal must be positive"))
             _ <- Either.cond(
@@ -178,7 +184,7 @@ object NetWorthService {
             for {
               id  <- Async[F].delay(LiabilityId.assume(UUID.randomUUID()))
               now <- Async[F].delay(Instant.now())
-              l   <- wealth.createLiability(Liability(
+              l   <- balanceSheet.createLiability(Liability(
                 id,
                 owner,
                 b.kind,
@@ -198,17 +204,17 @@ object NetWorthService {
         }
 
       def setLiabilityActive(owner: UserId, id: LiabilityId, active: Boolean): F[Option[Liability]] =
-        wealth.setLiabilityActive(owner, id, active)
+        balanceSheet.setLiabilityActive(owner, id, active)
 
       def addStatement(owner: UserId, s: LiabilityStatement): F[Either[PortfolioError, LiabilityStatement]] =
-        wealth.liabilities(owner).flatMap { ls =>
+        balanceSheet.liabilities(owner).flatMap { ls =>
           if (!ls.exists(_.id == s.liabilityId)) Async[F].pure(Left(PortfolioError.LiabilityNotFound(s.liabilityId)))
           else if (s.balance < 0) Async[F].pure(Left(PortfolioError.InvalidInput("a balance must not be negative")))
-          else wealth.upsertStatement(s).as(Right(s))
+          else balanceSheet.upsertStatement(s).as(Right(s))
         }
 
       def schedule(owner: UserId, id: LiabilityId): F[Either[PortfolioError, Schedule]] =
-        wealth.liabilities(owner).map(_.find(_.id == id).toRight(PortfolioError.LiabilityNotFound(id)).map { l =>
+        balanceSheet.liabilities(owner).map(_.find(_.id == id).toRight(PortfolioError.LiabilityNotFound(id)).map { l =>
           val rows = Amortization.forLiability(l)
           Schedule(
             l,
@@ -228,7 +234,13 @@ object NetWorthService {
       )
 
       private def parts(owner: UserId): R[Parts] =
-        lift((wealth.assets(owner), wealth.valuations(owner), wealth.liabilities(owner), wealth.statements(owner), market.fxRates()).mapN {
+        lift((
+          balanceSheet.assets(owner),
+          balanceSheet.valuations(owner),
+          balanceSheet.liabilities(owner),
+          balanceSheet.statements(owner),
+          market.fxRates()
+        ).mapN {
           (a, v, l, s, r) => Parts(a.filter(_.active), v, l.filter(_.active), s, FxTable(r))
         })
 

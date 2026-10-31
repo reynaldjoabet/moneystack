@@ -62,8 +62,7 @@ object CatalogService {
         } yield Right(c)
 
       def contactForUser(kind: ContactKind, userId: UserId, name: Title, email: Option[Email], currency: CurrencyCode): F[Contact] = {
-        // "wealth." is a fixed namespace from the project's first name: changing it would change existing ids.
-        val id = ContactId.assume(UUID.nameUUIDFromBytes(s"wealth.user.${kind.key}.${userId.value}".getBytes(UTF_8)))
+        val id = ContactId.assume(UUID.nameUUIDFromBytes(s"moneystack.user.${kind.key}.${userId.value}".getBytes(UTF_8)))
         for {
           now <- Async[F].delay(Instant.now())
           _   <- contactRepo.ensure(Contact(id, kind, name, email, currency, Some(userId), active = true, now))

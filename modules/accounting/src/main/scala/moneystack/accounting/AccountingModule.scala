@@ -34,6 +34,9 @@ final class AccountingModule[F[_]: Async] private (
 
 object AccountingModule {
 
+  /** Flyway migrations under `db/migration/accounting`. */
+  val migrations: String = "accounting"
+
   def make[F[_]: Async](pool: Resource[F, Session[F]], baseCurrency: CurrencyCode): AccountingModule[F] = {
     val db          = new Db[F](pool)
     val accounts    = LedgerAccounts.make[F](pool)

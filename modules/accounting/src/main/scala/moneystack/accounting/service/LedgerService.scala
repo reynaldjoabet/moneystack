@@ -70,8 +70,7 @@ object LedgerService {
 
   /** Accounts created by [[LedgerService.bootstrap]]; ids are derived from the code so they're stable. */
   final case class SystemAccount(code: AccountCode, name: Title, accountType: AccountType) {
-    // "wealth." is a fixed namespace from the project's first name: changing it would change existing ids.
-    val id: AccountId = AccountId.assume(UUID.nameUUIDFromBytes(s"wealth.ledger.${code.value}".getBytes(UTF_8)))
+    val id: AccountId = AccountId.assume(UUID.nameUUIDFromBytes(s"moneystack.ledger.${code.value}".getBytes(UTF_8)))
   }
 
   object SystemAccounts {

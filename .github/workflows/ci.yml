@@ -17,10 +17,10 @@ env:
   SBT_OPTS: -Xmx4g -XX:ReservedCodeCacheSize=512m
 
 jobs:
-  # Formatting is independent of Scala and JDK version, so it runs once here
+  # Formatting and scalafix are independent of the JDK, so they run once here
   # rather than being repeated in every matrix leg.
   lint:
-    name: Formatting
+    name: Lint
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -42,8 +42,9 @@ jobs:
       - name: Set up sbt
         uses: sbt/setup-sbt@v1
 
-      - name: Check formatting
-        run: sbt -v "scalafmtSbtCheck; scalafmtCheckAll"
+      # scalafmt, plus scalafix RemoveUnused (which compiles, for SemanticDB).
+      - name: Lint
+        run: sbt -v lint
 
   build:
     name: Java ${{ matrix.java }} (${{ matrix.distribution }})
@@ -79,5 +80,36 @@ jobs:
       - name: Set up sbt
         uses: sbt/setup-sbt@v1
 
+      # Unit suites, then the Testcontainers suites (`it` packages) against Docker on the runner.
       - name: Compile and test
-        run: sbt -v "Test/compile; test"
+        run: sbt -v "Test/compile; test; Integration/test"
+
+  coverage:
+    name: Coverage
+    needs: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Java
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: 'sbt'
+          cache-dependency-path: |
+            **/*.sbt
+            **/project/build.properties
+            **/project/*.scala
+            **/project/**/*.scala
+
+      - name: Set up sbt
+        uses: sbt/setup-sbt@v1
+
+      - name: Measure coverage
+        run: sbt -v cov | tee coverage.log
+
+      - name: Summarise coverage
+        run: grep -E 'Statement coverage|Branch coverage' coverage.log | sed 's/^\[info\] /- /' >> "$GITHUB_STEP_SUMMARY"

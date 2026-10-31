@@ -9,7 +9,7 @@ import skunk.*
 import skunk.implicits.*
 
 /** Property, vehicles and other holdings outside brokerage accounts, plus loans. Scoped to an owner. */
-trait Wealth[F[_]] {
+trait BalanceSheet[F[_]] {
   def createAsset(a: AltAsset): F[AltAsset]
   def assets(owner: UserId): F[List[AltAsset]]
   def setAssetActive(owner: UserId, id: AltAssetId, active: Boolean): F[Option[AltAsset]]
@@ -23,7 +23,7 @@ trait Wealth[F[_]] {
   def statements(owner: UserId): F[List[LiabilityStatement]]
 }
 
-object Wealth {
+object BalanceSheet {
 
   import Codecs.{
     altAsset as altC, altAssetId as altIdC, altValuation as valuationC, liability as liabilityC,
@@ -31,7 +31,7 @@ object Wealth {
   }
   import skunk.codec.all.bool
 
-  def make[F[_]: Concurrent](pool: Resource[F, Session[F]]): Wealth[F] = new Wealth[F] {
+  def make[F[_]: Concurrent](pool: Resource[F, Session[F]]): BalanceSheet[F] = new BalanceSheet[F] {
 
     def createAsset(a: AltAsset): F[AltAsset] = pool.use(_.prepare(Q.insertAsset).flatMap(_.unique(a)))
 
