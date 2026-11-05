@@ -1,0 +1,36 @@
+# The only limit on password guessing: the app doesn't count login attempts. Clients over it get 429.
+#
+# Each client IP gets 10 requests a minute across the routes in moneystack-auth. This is Envoy Gateway's
+# local rate limit, which needs no Redis, but each Envoy replica counts separately, so the effective limit
+# is 10 times the replicas. Lower it if you run many, or move to `global` for one shared count.
+#
+# It only works if Envoy sees real client addresses. Behind a cloud load balancer every request may look
+# like it comes from the LB, and all users share one bucket. The platform team must set clientIPDetection
+# or PROXY protocol in a ClientTrafficPolicy on Gateway infra/public, to match that load balancer.
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: moneystack-auth
+  namespace: moneystack
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: moneystack-auth
+  rateLimit:
+    local:
+      rules:
+        - clientSelectors:
+            - sourceCIDR:
+                type: Distinct
+                value: 0.0.0.0/0
+          limit:
+            requests: 10
+            unit: Minute
+        - clientSelectors:
+            - sourceCIDR:
+                type: Distinct
+                value: ::/0
+          limit:
+            requests: 10
+            unit: Minute

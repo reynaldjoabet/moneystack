@@ -1,0 +1,119 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: moneystack
+  namespace: moneystack
+spec:
+  replicas: 3
+  minReadySeconds: 10
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: moneystack
+      app.kubernetes.io/component: api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: moneystack
+        app.kubernetes.io/component: api
+    spec:
+      serviceAccountName: moneystack
+      automountServiceAccountToken: false
+      # Longer than HTTP_DRAIN_DELAY plus HTTP_SHUTDOWN_TIMEOUT (10s + 30s), or in-flight requests are killed.
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001 # the image's user; its group stays 0, which owns the app's files
+        seccompProfile:
+          type: RuntimeDefault
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: moneystack
+              app.kubernetes.io/component: api
+          matchLabelKeys: [pod-template-hash]
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: moneystack
+              app.kubernetes.io/component: api
+          matchLabelKeys: [pod-template-hash]
+      containers:
+        - name: moneystack
+          image: moneystack # set in kustomization.yaml
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            # The real hostname, not a Service alias: DB_SSL=system checks the certificate against it.
+            - name: DB_HOST
+              value: moneystack-db.internal.example.com
+            - name: DB_NAME
+              value: moneystack
+            - name: DB_USER
+              value: moneystack
+            - name: DB_SSL
+              value: system
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: moneystack
+                  key: db-password
+            - name: AUTH_JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: moneystack
+                  key: jwt-secret
+            - name: LOG_FORMAT
+              value: json
+            # On SIGTERM the Pod leaves the EndpointSlice while it keeps serving: this is how long Envoy
+            # gets to notice, so there's no preStop hook.
+            - name: HTTP_DRAIN_DELAY
+              value: 10 seconds
+          startupProbe: # JVM start plus Flyway migrations: up to 3 minutes
+            httpGet:
+              path: /health/live
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 36
+          readinessProbe: # 503 until Postgres answers, within the app's own 2 second limit
+            httpGet:
+              path: /health/ready
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+          livenessProbe: # the process only, so a Postgres outage doesn't restart every Pod
+            httpGet:
+              path: /health/live
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+          resources:
+            # The heap takes 75% of the limit. 512Mi was too small: 680MiB was used after a short load.
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi

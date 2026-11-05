@@ -1,0 +1,12 @@
+# Node drains and cluster upgrades take at most one Pod at a time.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: moneystack
+  namespace: moneystack
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: moneystack
+      app.kubernetes.io/component: api

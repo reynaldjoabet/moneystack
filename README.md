@@ -88,7 +88,8 @@ cause carries it too.
 
 - Terminate TLS in front of the app (load balancer or ingress), and set `DB_SSL=system` when Postgres is remote.
 - Inject `AUTH_JWT_SECRET` and `DB_PASSWORD` from a secret store, never from the image or the repo.
-- The app does not limit login attempts: rate-limit `/auth/login` at the load balancer or gateway.
+- The app does not limit login attempts: rate-limit `/auth/login` at the load balancer or gateway
+  (`deploy/ratelimit.yaml` does this on Envoy Gateway).
 - Point liveness at `/health/live` and readiness at `/health/ready`. Give the pod a termination grace
   period longer than `HTTP_DRAIN_DELAY` plus `HTTP_SHUTDOWN_TIMEOUT`. Probes are left out of the access log.
 - The session timeouts are sent as Postgres startup parameters. PgBouncer refuses connections carrying
@@ -101,6 +102,24 @@ cause carries it too.
   images current; for Scala dependencies run `sbt --client dependencyUpdates`.
 - The JVM sizes its heap to 75% of the container's memory limit and exits on `OutOfMemoryError`, so the
   orchestrator restarts it.
+
+### Deploying to Kubernetes
+
+[deploy/](deploy/) is a Kustomize app for a cluster with Envoy Gateway and a shared Gateway `infra/public`.
+Before applying it:
+
+1. Build and push an image, then set it in `deploy/kustomization.yaml`. CI doesn't push one yet.
+2. Set `DB_HOST` in `deploy/deployment.yaml` to the database's real hostname. With `DB_SSL=system` its
+   certificate must match that name and chain to the JVM trust store, so a private CA needs a custom image.
+3. Set the host in `deploy/httproute.yaml` (both routes).
+4. Create the Secret: `kubectl create namespace moneystack`, then the command in `deploy/kustomization.yaml`.
+5. Make sure Envoy sees real client IPs. Set `clientIPDetection` or PROXY protocol in a `ClientTrafficPolicy`
+   on the Gateway, or all users behind the load balancer share one login rate limit (see `deploy/ratelimit.yaml`).
+
+Then run `kubectl apply -k deploy`. The database role needs to be able to run the migrations, or
+`DB_MIGRATE_ON_START=false` with migrations run separately.
+
+Each Pod needs 1 GiB of memory and opens up to `DB_POOL_MAX` Postgres connections: 8 per Pod by default.
 
 ## Developing
 
