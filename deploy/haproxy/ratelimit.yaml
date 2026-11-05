@@ -1,7 +1,8 @@
 # The only limit on password guessing: the app doesn't count login attempts. Clients over it get 429.
 #
 # Each client IP gets 10 requests a minute across the moneystack-auth route, and stays blocked while it
-# keeps retrying, because refused requests count too. This is a HAProxy stick table, which needs no Redis,
+# keeps retrying, because refused requests count too: it recovers about 2 minutes after it stops. This is a
+# HAProxy stick table, which needs no Redis,
 # but each HAProxy Pod counts separately, so the effective limit is 10 times the replicas.
 #
 # It only works if HAProxy sees real client addresses: see platform/values.yaml.

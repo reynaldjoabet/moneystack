@@ -14,9 +14,26 @@ import org.typelevel.log4cats.Logger
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 import org.typelevel.otel4s.metrics.MeterProvider
 import org.typelevel.otel4s.trace.TracerProvider
+import fs2.io.net.tls.TLSParameters
 import skunk.{SSL, Session}
 
+import javax.net.ssl.SNIHostName
+
 object Main extends IOApp.Simple {
+
+  /**
+   * `System` also checks the certificate names `DB_HOST`, as pgjdbc's verify-full does for Flyway: skunk's default
+   * only checks that a trusted CA issued it, which any other certificate from that CA would pass.
+   */
+  private[moneystack] def sslFor(mode: DbSsl, host: String): SSL = mode match {
+    case DbSsl.Disabled => SSL.None
+    case DbSsl.Trusted  => SSL.Trusted
+    case DbSsl.System   =>
+      // The TLS engine isn't told the peer's name, so the check takes it from the SNI name.
+      SSL.System.withTLSParameters(
+        TLSParameters(endpointIdentificationAlgorithm = Some("HTTPS"), serverNames = Some(List(new SNIHostName(host))))
+      )
+  }
 
   /** The app's own migrations, then each module's: the order they are applied in. */
   val migrations: List[String] =
@@ -63,16 +80,11 @@ object Main extends IOApp.Simple {
   private def sessionPool(db: DbConfig, telemetry: Telemetry): Resource[IO, Resource[IO, Session[IO]]] = {
     given TracerProvider[IO] = telemetry.tracerProvider
     given MeterProvider[IO]  = telemetry.meterProvider
-    val ssl                  = db.ssl match {
-      case DbSsl.Disabled => SSL.None
-      case DbSsl.Trusted  => SSL.Trusted
-      case DbSsl.System   => SSL.System
-    }
-    val base = Session.Builder[IO]
+    val base                 = Session.Builder[IO]
       .withHost(db.host)
       .withPort(db.port)
       .withDatabase(db.database)
-      .withSSL(ssl)
+      .withSSL(sslFor(db.ssl, db.host))
       .withConnectionParameters(
         Session.DefaultConnectionParameters ++ Map(
           "statement_timeout"                   -> db.statementTimeout.toMillis.toString,

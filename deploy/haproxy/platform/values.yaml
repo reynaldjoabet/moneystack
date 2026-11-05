@@ -2,6 +2,16 @@
 # See gateway.yaml for the install command.
 controller:
   replicaCount: 3
+  # The chart's memory limit (2560Mi) is needed: at 768Mi HAProxy exits on startup, because its default
+  # maxconn doesn't fit, while the Pod keeps running. The chart sets no probes, so without this one a Pod
+  # whose HAProxy has died still reports Ready and keeps getting traffic.
+  readinessProbe:
+    tcpSocket:
+      port: 443 # the Gateway's HTTPS listener
+    initialDelaySeconds: 5
+    periodSeconds: 5
+    timeoutSeconds: 2
+    failureThreshold: 2
   topologySpreadConstraints:
     - maxSkew: 1
       topologyKey: topology.kubernetes.io/zone

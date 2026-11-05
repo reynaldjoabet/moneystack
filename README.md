@@ -26,7 +26,7 @@ Every setting is an environment variable. All problems are reported at once on s
 | `DB_HOST` / `DB_PORT` | `localhost` / `5432` | |
 | `DB_USER`, `DB_NAME` | required | |
 | `DB_PASSWORD` | none | |
-| `DB_SSL` | `disable` | `trusted` encrypts without checking the certificate; `system` verifies it against the JVM trust store |
+| `DB_SSL` | `disable` | `trusted` encrypts without checking the certificate; `system` also verifies it and its hostname against `DB_HOST`, using the JVM trust store |
 | `DB_POOL_MAX` | `8` | session pool size |
 | `DB_STATEMENT_TIMEOUT` | `30 seconds` | Postgres cancels longer statements (migrations are exempt) |
 | `DB_IDLE_IN_TRANSACTION_TIMEOUT` | `60 seconds` | Postgres ends sessions left idle inside a transaction |
@@ -105,21 +105,30 @@ cause carries it too.
 
 ### Deploying to Kubernetes
 
-[deploy/](deploy/) is a Kustomize app for a cluster with Envoy Gateway and a shared Gateway `infra/public`.
-Before applying it:
+[deploy/](deploy/) holds a Kustomize app for a cluster with a shared Gateway. Use one gateway, not both:
+Envoy Gateway (`kubectl apply -k deploy`, expects Gateway `infra/public`) or HAProxy Unified Gateway
+(`kubectl apply -k deploy/haproxy`; [deploy/haproxy/platform/](deploy/haproxy/platform/) installs the gateway).
+Everything else is shared, in [deploy/base/](deploy/base/). Before applying:
 
-1. Build and push an image, then set it in `deploy/kustomization.yaml`. CI doesn't push one yet.
-2. Set `DB_HOST` in `deploy/deployment.yaml` to the database's real hostname. With `DB_SSL=system` its
-   certificate must match that name and chain to the JVM trust store, so a private CA needs a custom image.
-3. Set the host in `deploy/httproute.yaml` (both routes).
-4. Create the Secret: `kubectl create namespace moneystack`, then the command in `deploy/kustomization.yaml`.
-5. Make sure Envoy sees real client IPs. Set `clientIPDetection` or PROXY protocol in a `ClientTrafficPolicy`
-   on the Gateway, or all users behind the load balancer share one login rate limit (see `deploy/ratelimit.yaml`).
+1. Build and push an image, then set it in `deploy/base/kustomization.yaml`. CI doesn't push one yet.
+2. Set `DB_HOST` in `deploy/base/deployment.yaml` to the database's real hostname. With `DB_SSL=system` the
+   certificate must name that host and chain to the JVM trust store, so a private CA needs a trust store in
+   the image, or in `JAVA_OPTS` with a mounted file.
+3. Set the host in the `httproute.yaml` of the gateway you use (both routes).
+4. Create the Secret: `kubectl create namespace moneystack`, then the command in that gateway's `kustomization.yaml`.
+5. Make sure the gateway sees real client IPs, or all users behind the load balancer share one login rate
+   limit. On Envoy, set `clientIPDetection` or PROXY protocol in a `ClientTrafficPolicy` on the Gateway. On
+   HAProxy, see `deploy/haproxy/platform/values.yaml`.
 
-Then run `kubectl apply -k deploy`. The database role needs to be able to run the migrations, or
-`DB_MIGRATE_ON_START=false` with migrations run separately.
-
+The database role must be able to run the migrations, or use `DB_MIGRATE_ON_START=false` and run them separately.
 Each Pod needs 1 GiB of memory and opens up to `DB_POOL_MAX` Postgres connections: 8 per Pod by default.
+
+The rate limit is 10 requests a minute per client IP, counted per gateway replica, so 3 replicas allow 30.
+On HAProxy a blocked client recovers about 2 minutes after it stops retrying.
+
+On HAProxy, keep the chart's 2560Mi memory limit: below it HAProxy can exit at startup. After adding a
+`gateway-access` label to an existing namespace, restart the controller: it doesn't notice the change. The
+chart's `stat` Service port is 31024, but HAProxy serves stats and metrics on 1024, so scrape the Pod's port 1024.
 
 ## Developing
 

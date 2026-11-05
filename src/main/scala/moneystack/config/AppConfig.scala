@@ -35,7 +35,7 @@ final case class DbConfig(
     idleInTransactionTimeout: FiniteDuration
 ) {
 
-  /** pgjdbc's equivalent of `ssl`: `DefaultJavaSSLFactory` verifies against the JVM's trust store, like skunk's `SSL.System`. */
+  /** pgjdbc's equivalent of `ssl`: `DefaultJavaSSLFactory` verifies against the JVM's trust store, like `Main.sslFor`. */
   private def sslParams: String = ssl match {
     case DbSsl.Disabled => ""
     case DbSsl.Trusted  => "?sslmode=require&sslfactory=org.postgresql.ssl.NonValidatingFactory"
