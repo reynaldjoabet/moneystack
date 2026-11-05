@@ -110,7 +110,8 @@ object Codecs {
 
   // ---- aggregates ----
 
-  val user: Codec[User] = (userId *: email *: passwordHash *: displayName *: role *: locale *: telegramChat.opt *: instant).to[User]
+  val user: Codec[User] =
+    (userId *: email *: passwordHash *: displayName *: role *: locale *: telegramChat.opt *: instant *: _root_.skunk.codec.all.int4).to[User]
 
   val instrument: Codec[Instrument] = (ticker *: exchange *: isin.opt *: instrumentKind *: title *: currency).to[Instrument]
 

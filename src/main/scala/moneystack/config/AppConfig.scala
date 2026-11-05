@@ -17,7 +17,11 @@ enum DbSsl {
   case Disabled, Trusted, System
 }
 
-/** `migrateOnStart` applies pending Flyway migrations before the server starts. */
+/**
+ * `migrateOnStart` applies pending Flyway migrations before the server starts. The timeouts are set on every
+ * app session: Postgres cancels a statement running past `statementTimeout`, and ends a session left idle inside a
+ * transaction past `idleInTransactionTimeout`, so neither can hold locks or a pool slot indefinitely.
+ */
 final case class DbConfig(
     host: String,
     port: Int,
@@ -26,7 +30,9 @@ final case class DbConfig(
     database: String,
     poolMax: Int,
     migrateOnStart: Boolean,
-    ssl: DbSsl
+    ssl: DbSsl,
+    statementTimeout: FiniteDuration,
+    idleInTransactionTimeout: FiniteDuration
 ) {
 
   /** pgjdbc's equivalent of `ssl`: `DefaultJavaSSLFactory` verifies against the JVM's trust store, like skunk's `SSL.System`. */
@@ -40,7 +46,11 @@ final case class DbConfig(
     Migrations.Target(s"jdbc:postgresql://$host:$port/$database$sslParams", user, password.map(_.value))
 }
 
-/** An empty `corsOrigins` serves no CORS headers, so browsers only call the API from its own origin. */
+/**
+ * An empty `corsOrigins` serves no CORS headers, so browsers only call the API from its own origin. On shutdown the
+ * server reports not-ready for `drainDelay` before it stops accepting connections, so load balancers stop sending
+ * new requests first.
+ */
 final case class HttpConfig(
     host: Host,
     port: Port,
@@ -48,7 +58,8 @@ final case class HttpConfig(
     idleTimeout: FiniteDuration,
     shutdownTimeout: FiniteDuration,
     maxBodyBytes: Long,
-    corsOrigins: List[String]
+    corsOrigins: List[String],
+    drainDelay: FiniteDuration
 )
 
 final case class AuthConfig(jwtSecret: Secret[String], issuer: String, tokenTtl: FiniteDuration)
@@ -108,7 +119,9 @@ object AppConfig {
       setting("DB_NAME"),
       setting("DB_POOL_MAX").as[Int].default(8),
       setting("DB_MIGRATE_ON_START").as[Boolean].default(true),
-      setting("DB_SSL").as[DbSsl].default(DbSsl.Disabled)
+      setting("DB_SSL").as[DbSsl].default(DbSsl.Disabled),
+      setting("DB_STATEMENT_TIMEOUT").as[FiniteDuration].default(FiniteDuration(30, "s")),
+      setting("DB_IDLE_IN_TRANSACTION_TIMEOUT").as[FiniteDuration].default(FiniteDuration(60, "s"))
     ).parMapN(DbConfig.apply)
 
   private val http: ConfigValue[Effect, HttpConfig] =
@@ -119,7 +132,8 @@ object AppConfig {
       setting("HTTP_IDLE_TIMEOUT").as[FiniteDuration].default(FiniteDuration(60, "s")),
       setting("HTTP_SHUTDOWN_TIMEOUT").as[FiniteDuration].default(FiniteDuration(30, "s")),
       setting("HTTP_MAX_BODY_BYTES").as[Long].default(1024L * 1024),
-      list("HTTP_CORS_ORIGINS")
+      list("HTTP_CORS_ORIGINS"),
+      setting("HTTP_DRAIN_DELAY").as[FiniteDuration].default(FiniteDuration(5, "s"))
     ).parMapN(HttpConfig.apply)
 
   private val auth: ConfigValue[Effect, AuthConfig] =

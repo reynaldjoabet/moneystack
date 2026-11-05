@@ -7,6 +7,8 @@ import cats.syntax.all.*
 import skunk.{Command, Query, Session}
 import skunk.implicits.*
 
+import java.time.LocalDate
+
 /** Transactions with their splits. Writes that must commit with other changes take a session. */
 trait Transactions[F[_]] {
   def insert(t: Transaction): F[Transaction]
@@ -18,12 +20,20 @@ trait Transactions[F[_]] {
 
   /** Transactions touching any of `wallets` (as source or transfer destination). */
   def forWallets(wallets: List[WalletId]): F[List[Transaction]]
+
+  /** As [[forWallets]], dated `from` to `to` inclusive. */
+  def between(wallets: List[WalletId], from: LocalDate, to: LocalDate): F[List[Transaction]]
+
+  def find(id: TransactionId): F[Option[Transaction]]
+
+  /** The import keys already recorded in `wallet`, for de-duplicating a CSV import. */
+  def importKeys(wallet: WalletId): F[Set[String]]
 }
 
 object Transactions {
 
   import Codecs.{split as splitC, transaction as txC, transactionId as txIdC, walletId as walletIdC}
-  import skunk.codec.all.int4
+  import skunk.codec.all.{date, int4, varchar}
 
   def make[F[_]: Concurrent](pool: Resource[F, Session[F]]): Transactions[F] = new Transactions[F] {
 
@@ -54,16 +64,41 @@ object Transactions {
         case _                               => false
       }
 
+    /** Attaches each transaction's splits. */
+    private def withSplits(txs: List[Transaction], splits: List[(TransactionId, Split)]): List[Transaction] = {
+      val byTx = splits.groupMap(_._1)(_._2)
+      txs.map(t => t.copy(splits = byTx.getOrElse(t.id, Nil)))
+    }
+
     def forWallets(wallets: List[WalletId]): F[List[Transaction]] =
       if (wallets.isEmpty) Concurrent[F].pure(Nil)
       else pool.use { s =>
-        for {
-          txs    <- s.prepare(Q.forWallets(wallets.size)).flatMap(_.stream((wallets, wallets), 512).compile.toList)
-          splits <- if (txs.isEmpty) Concurrent[F].pure(Nil)
-          else s.prepare(Q.splitsFor(txs.size)).flatMap(_.stream(txs.map(_.id), 512).compile.toList)
-          byTx = splits.groupMap(_._1)(_._2)
-        } yield txs.map(t => t.copy(splits = byTx.getOrElse(t.id, Nil)))
+        val args = (wallets, wallets)
+        (
+          s.prepare(Q.forWallets(wallets.size)).flatMap(_.stream(args, 512).compile.toList),
+          s.prepare(Q.splitsForWallets(wallets.size)).flatMap(_.stream(args, 512).compile.toList)
+        ).mapN(withSplits)
       }
+
+    def between(wallets: List[WalletId], from: LocalDate, to: LocalDate): F[List[Transaction]] =
+      if (wallets.isEmpty) Concurrent[F].pure(Nil)
+      else pool.use { s =>
+        val args = (wallets, wallets, from, to)
+        (
+          s.prepare(Q.between(wallets.size)).flatMap(_.stream(args, 512).compile.toList),
+          s.prepare(Q.splitsBetween(wallets.size)).flatMap(_.stream(args, 512).compile.toList)
+        ).mapN(withSplits)
+      }
+
+    def find(id: TransactionId): F[Option[Transaction]] =
+      pool.use { s =>
+        s.prepare(Q.byId).flatMap(_.option(id)).flatMap(_.traverse(t =>
+          s.prepare(Q.splitsOf).flatMap(_.stream(id, 64).compile.toList).map(sp => t.copy(splits = sp))
+        ))
+      }
+
+    def importKeys(wallet: WalletId): F[Set[String]] =
+      pool.use(_.prepare(Q.importKeys).flatMap(_.stream(wallet, 1024).compile.to(Set)))
   }
 
   private object Q {
@@ -85,10 +120,23 @@ object Transactions {
     def delete(n: Int): Command[(TransactionId, List[WalletId])] =
       sql"DELETE FROM budget.transactions WHERE id = $txIdC AND wallet_id IN (${walletIdC.list(n)})".command
 
+    /** Transactions touching one of `n` wallets. Splits are matched by joining on this too, not by listing transaction ids. */
+    private def touching(n: Int) =
+      sql"(t.wallet_id IN (${walletIdC.list(n)}) OR t.to_wallet_id IN (${walletIdC.list(n)}))"
+
     def forWallets(n: Int): Query[(List[WalletId], List[WalletId]), Transaction] =
-      sql"""SELECT $cols FROM budget.transactions
-            WHERE wallet_id IN (${walletIdC.list(n)}) OR to_wallet_id IN (${walletIdC.list(n)})
+      sql"SELECT $cols FROM budget.transactions t WHERE ${touching(n)} ORDER BY tx_date, created_at".query(txC)
+
+    def between(n: Int): Query[(List[WalletId], List[WalletId], LocalDate, LocalDate), Transaction] =
+      sql"""SELECT $cols FROM budget.transactions t WHERE ${touching(n)} AND t.tx_date BETWEEN $date AND $date
             ORDER BY tx_date, created_at""".query(txC)
+        .contramap[(List[WalletId], List[WalletId], LocalDate, LocalDate)] { case (a, b, f, to) => ((a, b), f, to) }
+
+    val byId: Query[TransactionId, Transaction] =
+      sql"SELECT $cols FROM budget.transactions WHERE id = $txIdC".query(txC)
+
+    val importKeys: Query[WalletId, String] =
+      sql"SELECT import_key FROM budget.transactions WHERE wallet_id = $walletIdC AND import_key IS NOT NULL".query(varchar(64))
 
     val clearSplits: Command[TransactionId] =
       sql"DELETE FROM budget.transaction_splits WHERE transaction_id = $txIdC".command
@@ -97,8 +145,19 @@ object Transactions {
       sql"""INSERT INTO budget.transaction_splits (transaction_id, position, category_id, amount_minor, note)
             VALUES ($txIdC, $int4, $splitC)""".command
 
-    def splitsFor(n: Int): Query[List[TransactionId], (TransactionId, Split)] =
-      sql"""SELECT transaction_id, category_id, amount_minor, note FROM budget.transaction_splits
-            WHERE transaction_id IN (${txIdC.list(n)}) ORDER BY transaction_id, position""".query(txIdC *: splitC)
+    private val splitCols = sql"s.transaction_id, s.category_id, s.amount_minor, s.note"
+
+    def splitsForWallets(n: Int): Query[(List[WalletId], List[WalletId]), (TransactionId, Split)] =
+      sql"""SELECT $splitCols FROM budget.transaction_splits s JOIN budget.transactions t ON t.id = s.transaction_id
+            WHERE ${touching(n)} ORDER BY s.transaction_id, s.position""".query(txIdC *: splitC)
+
+    def splitsBetween(n: Int): Query[(List[WalletId], List[WalletId], LocalDate, LocalDate), (TransactionId, Split)] =
+      sql"""SELECT $splitCols FROM budget.transaction_splits s JOIN budget.transactions t ON t.id = s.transaction_id
+            WHERE ${touching(n)} AND t.tx_date BETWEEN $date AND $date ORDER BY s.transaction_id, s.position""".query(txIdC *: splitC)
+        .contramap[(List[WalletId], List[WalletId], LocalDate, LocalDate)] { case (a, b, f, to) => ((a, b), f, to) }
+
+    val splitsOf: Query[TransactionId, Split] =
+      sql"""SELECT category_id, amount_minor, note FROM budget.transaction_splits
+            WHERE transaction_id = $txIdC ORDER BY position""".query(splitC)
   }
 }

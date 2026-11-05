@@ -28,6 +28,8 @@ Every setting is an environment variable. All problems are reported at once on s
 | `DB_PASSWORD` | none | |
 | `DB_SSL` | `disable` | `trusted` encrypts without checking the certificate; `system` verifies it against the JVM trust store |
 | `DB_POOL_MAX` | `8` | session pool size |
+| `DB_STATEMENT_TIMEOUT` | `30 seconds` | Postgres cancels longer statements (migrations are exempt) |
+| `DB_IDLE_IN_TRANSACTION_TIMEOUT` | `60 seconds` | Postgres ends sessions left idle inside a transaction |
 | `DB_MIGRATE_ON_START` | `true` | apply pending Flyway migrations before serving |
 | `AUTH_JWT_SECRET` | required | HS256 signing key, at least 32 bytes; rotating it signs everyone out |
 | `AUTH_TOKEN_TTL` | `1 hour` | how long an access token is valid |
@@ -38,6 +40,7 @@ Every setting is an environment variable. All problems are reported at once on s
 | `HTTP_SHUTDOWN_TIMEOUT` | `30 seconds` | time in-flight requests get to finish on SIGTERM |
 | `HTTP_MAX_BODY_BYTES` | `1048576` | larger request bodies are answered 413 |
 | `HTTP_CORS_ORIGINS` | none | comma-separated origins allowed to call the API from a browser |
+| `HTTP_DRAIN_DELAY` | `5 seconds` | on SIGTERM, readiness reports 503 this long before connections stop being accepted |
 | `TELEMETRY_ENABLED` | `false` | export traces and metrics over OTLP (see below) |
 | `LOG_FORMAT` | `text` | `json` for one JSON object per line |
 | `LOG_LEVEL` | `INFO` | root log level |
@@ -64,8 +67,9 @@ Every new account is an investor. An admin changes roles with `PUT /admin/users/
 UPDATE users SET role = 'admin' WHERE email = 'you@example.com';
 ```
 
-Passwords need 12 to 72 bytes (bcrypt reads no further). Tokens can't be revoked before they expire, so
-keep `AUTH_TOKEN_TTL` short. Rate-limit `/auth/login` at the load balancer or gateway.
+Passwords need 12 to 72 bytes (bcrypt reads no further). `POST /auth/password` with
+`{"currentPassword", "newPassword"}` changes it and `POST /auth/logout-all` signs out every device: both
+revoke every token issued before. The password change answers a new token for the caller.
 
 ### Observability
 
@@ -84,10 +88,17 @@ cause carries it too.
 
 - Terminate TLS in front of the app (load balancer or ingress), and set `DB_SSL=system` when Postgres is remote.
 - Inject `AUTH_JWT_SECRET` and `DB_PASSWORD` from a secret store, never from the image or the repo.
+- The app does not limit login attempts: rate-limit `/auth/login` at the load balancer or gateway.
 - Point liveness at `/health/live` and readiness at `/health/ready`. Give the pod a termination grace
-  period longer than `HTTP_SHUTDOWN_TIMEOUT`.
+  period longer than `HTTP_DRAIN_DELAY` plus `HTTP_SHUTDOWN_TIMEOUT`. Probes are left out of the access log.
+- The session timeouts are sent as Postgres startup parameters. PgBouncer refuses connections carrying
+  them unless they are in its `ignore_startup_parameters`: list them there and set the timeouts on the
+  database role instead (`ALTER ROLE … SET statement_timeout = '30s'`).
 - Replicas that start together are safe: Flyway holds a Postgres advisory lock, so one of them migrates and
   the others wait. For long migrations, run the app once as a job, then deploy with `DB_MIGRATE_ON_START=false`.
+- The image applies Ubuntu's security updates on top of the Temurin base when it is built, and CI fails
+  on any fixable high or critical vulnerability in it (Trivy). Dependabot keeps the Actions and compose
+  images current; for Scala dependencies run `sbt --client dependencyUpdates`.
 - The JVM sizes its heap to 75% of the container's memory limit and exits on `OutOfMemoryError`, so the
   orchestrator restarts it.
 

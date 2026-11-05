@@ -1,0 +1,12 @@
+# Weekly PRs for the GitHub Actions and the compose images. Scala dependencies aren't supported by
+# Dependabot: run `sbt --client dependencyUpdates`, or install Scala Steward for PRs.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule:
+      interval: weekly

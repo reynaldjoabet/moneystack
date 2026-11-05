@@ -1,3 +1,4 @@
+import com.typesafe.sbt.packager.docker.Cmd
 import Dependencies.Versions
 
 ThisBuild / scalaVersion := "3.9.0"
@@ -138,8 +139,19 @@ lazy val packagingSettings = Seq(
     "-J-XX:+ExitOnOutOfMemoryError",
     "-J--sun-misc-unsafe-memory-access=allow"
   ),
-  dockerBaseImage      := "eclipse-temurin:25-jre-noble",
-  dockerExposedPorts   := Seq(8080),
+  dockerBaseImage    := "eclipse-temurin:25-jre-noble",
+  dockerExposedPorts := Seq(8080),
+  // The base image is rebuilt only every few weeks, so apply the distribution's security updates on top of it;
+  // otherwise CI's image scan fails on vulnerabilities Ubuntu has already fixed. (`USER root` in the final stage.)
+  dockerCommands := {
+    val cmds = dockerCommands.value
+    val root = cmds.lastIndexWhere(_ == Cmd("USER", "root"))
+    cmds.patch(
+      root + 1,
+      Seq(Cmd("RUN", "apt-get update && apt-get upgrade -y --no-install-recommends && rm -rf /var/lib/apt/lists/*")),
+      0
+    )
+  },
   dockerUpdateLatest   := true,
   Docker / packageName := "moneystack",
   Docker / version     := version.value

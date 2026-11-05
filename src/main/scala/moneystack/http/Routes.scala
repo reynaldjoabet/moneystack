@@ -72,7 +72,11 @@ final class Routes[F[_]: Async](
     }
 
   private def session(u: User): F[Json.AuthSession] =
-    tokens.issue(u.id).map(t => Json.AuthSession(t.token, t.expiresAt, u))
+    tokens.issue(u.id, u.tokenVersion).map(t => Json.AuthSession(t.token, t.expiresAt, u))
+
+  /** Runs `f` for any signed-in caller, 401 otherwise. */
+  private def signedIn(req: Request[F])(f: User => F[Response[F]]): F[Response[F]] =
+    principal.user(req).flatMap(_.fold(_ => HttpSupport.unauthorized[F], f))
 
   private val emailTaken: F[Response[F]] = Conflict(Map("error" -> "email already registered").asJson)
 
@@ -126,10 +130,30 @@ final class Routes[F[_]: Async](
       }
 
     case req @ GET -> Root / "auth" / "me" =>
-      principal.user(req).flatMap {
-        case Right(u) => Ok(Json.userEncoder(u))
-        case Left(_)  => HttpSupport.unauthorized[F]
+      signedIn(req)(u => Ok(Json.userEncoder(u)))
+
+    // Revokes every token issued so far, this one included, and answers a fresh one for this client.
+    case req @ POST -> Root / "auth" / "password" =>
+      signedIn(req) { u =>
+        req.as[Json.ChangePasswordBody].flatMap { b =>
+          Passwords.verify[F](b.currentPassword, Some(u.passwordHash)).flatMap {
+            case false => Forbidden(Map("error" -> "current password is wrong").asJson)
+            case true  =>
+              Passwords.validate(b.newPassword) match {
+                case Left(err) => BadRequest(Map("error" -> err).asJson)
+                case Right(pw) =>
+                  Passwords.hash[F](pw).flatMap(users.setPassword(u.id, _)).flatMap {
+                    case Some(updated) => session(updated).flatMap(Ok(_))
+                    case None          => HttpSupport.unauthorized[F]
+                  }
+              }
+          }
+        }
       }
+
+    // Signs the user out on every device: all their tokens stop working.
+    case req @ POST -> Root / "auth" / "logout-all" =>
+      signedIn(req)(u => users.revokeTokens(u.id) *> NoContent())
 
     // ---- investor: portfolios + holdings + valuations ----
 

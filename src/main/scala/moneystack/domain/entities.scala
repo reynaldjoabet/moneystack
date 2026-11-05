@@ -12,7 +12,9 @@ final case class User(
     role: Role,
     locale: Locale,
     telegramChatId: Option[TelegramChatId],
-    createdAt: Instant
+    createdAt: Instant,
+    /** Tokens issued at an older version are refused; see `Users.revokeTokens`. */
+    tokenVersion: Int = 0
 )
 
 // ---------- Instruments ----------

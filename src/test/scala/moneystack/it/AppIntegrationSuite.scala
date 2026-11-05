@@ -8,13 +8,15 @@ import org.http4s.*
 import org.http4s.implicits.*
 import skunk.Session
 
+import scala.concurrent.duration.*
+
 /** One database migrated the way the app migrates at startup: the app's schema, then every module's. */
 class AppIntegrationSuite extends moneystack.testkit.PostgresSuite[HealthRoutes[IO]] {
 
   def migrations: List[String] = Main.migrations
 
   def build(pool: Resource[IO, Session[IO]]): Resource[IO, HealthRoutes[IO]] =
-    Resource.pure(new HealthRoutes[IO](pool))
+    Resource.pure(new HealthRoutes[IO](pool, 2.seconds, IO.pure(false)))
 
   test("each module records V1 in its own history table") {
     Main.migrations.foldLeft(IO.unit) { (acc, module) =>

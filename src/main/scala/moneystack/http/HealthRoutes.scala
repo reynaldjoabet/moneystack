@@ -15,9 +15,15 @@ import scala.concurrent.duration.*
 
 /**
  * Probes for orchestrators. Liveness only says the process answers; readiness
- * also needs Postgres to answer within `timeout`, and is 503 otherwise.
+ * also needs Postgres to answer within `timeout`, and is 503 otherwise. Once
+ * `draining` (shutdown has begun), readiness is 503 so traffic moves elsewhere
+ * while in-flight requests finish.
  */
-final class HealthRoutes[F[_]: Temporal](pool: Resource[F, Session[F]], timeout: FiniteDuration = 2.seconds) extends Http4sDsl[F] {
+final class HealthRoutes[F[_]: Temporal](
+    pool: Resource[F, Session[F]],
+    timeout: FiniteDuration,
+    draining: F[Boolean]
+) extends Http4sDsl[F] {
 
   private val databaseUp: F[Boolean] =
     pool.use(_.unique(sql"SELECT 1".query(int4))).timeout(timeout).attempt.map(_.isRight)
@@ -28,9 +34,15 @@ final class HealthRoutes[F[_]: Temporal](pool: Resource[F, Session[F]], timeout:
       Ok(Map("status" -> "ok").asJson)
 
     case GET -> Root / "health" / "ready" =>
-      databaseUp.flatMap {
-        case true  => Ok(Map("status" -> "ok", "database" -> "up").asJson)
-        case false => ServiceUnavailable(Map("status" -> "unavailable", "database" -> "down").asJson)
+      draining.flatMap {
+        case true  => ServiceUnavailable(Map("status" -> "draining").asJson)
+        case false => ready
       }
   }
+
+  private def ready: F[Response[F]] =
+    databaseUp.flatMap {
+      case true  => Ok(Map("status" -> "ok", "database" -> "up").asJson)
+      case false => ServiceUnavailable(Map("status" -> "unavailable", "database" -> "down").asJson)
+    }
 }

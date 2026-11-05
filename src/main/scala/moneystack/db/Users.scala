@@ -15,11 +15,17 @@ trait Users[F[_]] {
 
   /** The updated user, or `None` when there is no such user. */
   def setRole(id: UserId, role: Role): F[Option[User]]
+
+  /** Replaces the password hash and revokes every token issued so far. */
+  def setPassword(id: UserId, hash: PasswordHash): F[Option[User]]
+
+  /** Revokes every token issued so far ("sign out everywhere"), returning the user at their new token version. */
+  def revokeTokens(id: UserId): F[Option[User]]
 }
 
 object Users {
 
-  import Codecs.{user as userC, userId as userIdC, email as emailC, role as roleC, telegramChat}
+  import Codecs.{user as userC, userId as userIdC, email as emailC, passwordHash as hashC, role as roleC, telegramChat}
 
   def make[F[_]: Concurrent](pool: Resource[F, Session[F]]): Users[F] =
     new Users[F] {
@@ -37,20 +43,28 @@ object Users {
 
       def setRole(id: UserId, role: Role): F[Option[User]] =
         pool.use(_.prepare(Q.setRole).flatMap(_.option((role, id))))
+
+      def setPassword(id: UserId, hash: PasswordHash): F[Option[User]] =
+        pool.use(_.prepare(Q.setPassword).flatMap(_.option((hash, id))))
+
+      def revokeTokens(id: UserId): F[Option[User]] =
+        pool.use(_.prepare(Q.revokeTokens).flatMap(_.option(id)))
     }
 
   private object Q {
+    private val cols = sql"id, email, password_hash, display_name, role, locale, telegram_chat_id, created_at, token_version"
+
     val insert: Query[User, User] =
-      sql"""INSERT INTO users (id, email, password_hash, display_name, role, locale, telegram_chat_id, created_at)
+      sql"""INSERT INTO users (id, email, password_hash, display_name, role, locale, telegram_chat_id, created_at, token_version)
             VALUES ${userC.values}
-            RETURNING id, email, password_hash, display_name, role, locale, telegram_chat_id, created_at""".query(userC)
+            RETURNING id, email, password_hash, display_name, role, locale, telegram_chat_id, created_at, token_version""".query(userC)
 
     val byId: Query[UserId, User] =
-      sql"""SELECT id, email, password_hash, display_name, role, locale, telegram_chat_id, created_at
+      sql"""SELECT id, email, password_hash, display_name, role, locale, telegram_chat_id, created_at, token_version
             FROM users WHERE id = $userIdC""".query(userC)
 
     val byEmail: Query[Email, User] =
-      sql"""SELECT id, email, password_hash, display_name, role, locale, telegram_chat_id, created_at
+      sql"""SELECT id, email, password_hash, display_name, role, locale, telegram_chat_id, created_at, token_version
             FROM users WHERE email = $emailC""".query(userC)
 
     val linkTg: Command[(TelegramChatId, UserId)] =
@@ -58,6 +72,13 @@ object Users {
 
     val setRole: Query[(Role, UserId), User] =
       sql"""UPDATE users SET role = $roleC WHERE id = $userIdC
-            RETURNING id, email, password_hash, display_name, role, locale, telegram_chat_id, created_at""".query(userC)
+            RETURNING id, email, password_hash, display_name, role, locale, telegram_chat_id, created_at, token_version""".query(userC)
+
+    val setPassword: Query[(PasswordHash, UserId), User] =
+      sql"""UPDATE users SET password_hash = $hashC, token_version = token_version + 1 WHERE id = $userIdC
+            RETURNING $cols""".query(userC)
+
+    val revokeTokens: Query[UserId, User] =
+      sql"UPDATE users SET token_version = token_version + 1 WHERE id = $userIdC RETURNING $cols".query(userC)
   }
 }

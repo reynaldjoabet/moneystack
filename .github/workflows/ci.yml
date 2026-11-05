@@ -84,9 +84,43 @@ jobs:
       - name: Compile and test
         run: sbt -v "Test/compile; test; Integration/test"
 
-      # Builds the image the way a release would, so a packaging break fails here rather than at deploy.
+  # Builds the image the way a release would, once, and fails on fixable high or critical vulnerabilities in it
+  # (base image packages and every jar), so a packaging break or a vulnerable dependency stops here.
+  image:
+    name: Image
+    needs: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Java
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: 'sbt'
+          cache-dependency-path: |
+            **/*.sbt
+            **/project/build.properties
+            **/project/*.scala
+            **/project/**/*.scala
+
+      - name: Set up sbt
+        uses: sbt/setup-sbt@v1
+
       - name: Build image
         run: sbt -v Docker/publishLocal
+
+      # Pinned to a commit: a tag can be moved to point at other code.
+      - name: Scan image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: moneystack:latest
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: '1'
 
   coverage:
     name: Coverage

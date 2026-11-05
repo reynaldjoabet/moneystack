@@ -248,8 +248,7 @@ object MoneyService {
       def transactions(user: UserId, f: Filter): F[List[Transaction]] =
         accessible(user).flatMap { ws =>
           val ids = f.wallet.fold(ws.map(_.id))(w => ws.map(_.id).filter(_ == w))
-          txRepo.forWallets(ids).map(_.filter { t =>
-            !t.date.isBefore(f.from) && !t.date.isAfter(f.to) &&
+          txRepo.between(ids, f.from, f.to).map(_.filter { t =>
             f.category.forall(c => t.categoryId.contains(c) || t.splits.exists(_.categoryId == c)) &&
             f.search.forall(q =>
               (t.title.value: String).toLowerCase.contains(q.toLowerCase) ||
@@ -305,9 +304,11 @@ object MoneyService {
           _ <- b.refundOf.traverse_ { r =>
             for {
               _    <- check(b.kind == TxKind.Income, BudgetError.Invalid("a refund is income"))
-              mine <- lift(txRepo.forWallets(ws.map(_.id)))
-              _    <-
-                check(mine.exists(t => t.id == r && t.kind == TxKind.Expense), BudgetError.Invalid("refundOf must be one of your expenses"))
+              orig <- lift(txRepo.find(r))
+              _    <- check(
+                orig.exists(t => ws.exists(_.id == t.walletId) && t.kind == TxKind.Expense),
+                BudgetError.Invalid("refundOf must be one of your expenses")
+              )
             } yield ()
           }
           rules <- lift(plans.rules(owner))
@@ -356,8 +357,9 @@ object MoneyService {
         } yield out).value
 
       private def findOwned(owner: UserId, id: TransactionId): R[Transaction] =
-        EitherT(walletRepo.owned(owner).flatMap(ws => txRepo.forWallets(ws.map(_.id))).map(_.find(t => t.id == id && t.ownerId == owner)
-          .toRight(BudgetError.TransactionNotFound(id))))
+        EitherT((walletRepo.owned(owner), txRepo.find(id)).mapN { (ws, found) =>
+          found.filter(t => t.ownerId == owner && ws.exists(_.id == t.walletId)).toRight(BudgetError.TransactionNotFound(id))
+        })
 
       def updateTransaction(owner: UserId, id: TransactionId, b: NewTransaction): F[Either[BudgetError, Transaction]] =
         (for {
@@ -427,10 +429,9 @@ object MoneyService {
       def importCsv(owner: UserId, wallet: WalletId, csv: String, dryRun: Boolean): F[Either[BudgetError, ImportReport]] = {
         val parsed = BudgetCsv.parse(csv)
         (for {
-          w        <- ownedWallet(owner, wallet)
-          _        <- check(parsed.errors.isEmpty, BudgetError.ImportFailed(parsed.errors))
-          existing <- lift(txRepo.forWallets(List(w.id)))
-          known = existing.flatMap(_.importKey).toSet
+          w     <- ownedWallet(owner, wallet)
+          _     <- check(parsed.errors.isEmpty, BudgetError.ImportFailed(parsed.errors))
+          known <- lift(txRepo.importKeys(w.id))
           fresh = parsed.rows.distinctBy(_.key(w.id)).filterNot(r => known(r.key(w.id)))
           cs <- lift(catalog.categories(owner))
           wanted =
@@ -489,7 +490,7 @@ object MoneyService {
       def exportCsv(user: UserId, from: LocalDate, to: LocalDate): F[String] =
         for {
           ws  <- accessible(user)
-          txs <- txRepo.forWallets(ws.map(_.id)).map(_.filter(t => !t.date.isBefore(from) && !t.date.isAfter(to)))
+          txs <- txRepo.between(ws.map(_.id), from, to)
           cs  <- ws.map(_.ownerId).distinct.flatTraverse(catalog.categories)
           ps  <- ws.map(_.ownerId).distinct.flatTraverse(catalog.payees)
           ts  <- ws.map(_.ownerId).distinct.flatTraverse(catalog.tags)

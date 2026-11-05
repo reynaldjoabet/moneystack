@@ -25,7 +25,8 @@ class MiddlewareSuite extends CatsEffectSuite {
     idleTimeout = 1.minute,
     shutdownTimeout = 1.second,
     maxBodyBytes = 16,
-    corsOrigins = List("https://app.example.com")
+    corsOrigins = List("https://app.example.com"),
+    drainDelay = Duration.Zero
   )
 
   private val routes = HttpRoutes.of[IO] {

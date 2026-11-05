@@ -9,6 +9,7 @@ import moneystack.platform.FxQuote
 
 import cats.effect.*
 import skunk.Session
+import skunk.implicits.*
 
 import java.time.{LocalDate, YearMonth}
 import java.util.UUID
@@ -343,5 +344,24 @@ class BudgetIntegrationSuite extends moneystack.testkit.PostgresSuite[BudgetModu
       vis <- money.transactions(them, MoneyService.Filter(None, None, None, d(1, 1), d(12, 31), 50))
       _   <- ok(money.deleteTransaction(me, tx.id))
     } yield assertEquals(vis, Nil)
+  }
+
+  test("a wallet with more transactions than Postgres allows bind parameters still loads") {
+    val owner = newUser
+    for {
+      w <- wallet(owner, "Busy")
+      // 70,000 rows: past the 65,535 parameters a query may bind, which listing every id would need.
+      _ <- sessions.use(_.execute(sql"""
+             INSERT INTO budget.transactions (id, owner_id, wallet_id, kind, amount_minor, tx_date, title, created_by)
+             SELECT gen_random_uuid(), '#${owner.value.toString}', '#${w.id.value.toString}', 'expense', 1,
+                    DATE '2026-03-01' + (g % 28), 'bulk', '#${owner.value.toString}'
+             FROM generate_series(1, 70000) g""".command))
+      all <- moneystack.budget.db.Transactions.make[IO](sessions).forWallets(List(w.id))
+      day <- money.transactions(owner, MoneyService.Filter(Some(w.id), None, None, d(3, 2), d(3, 2), 10))
+    } yield {
+      assertEquals(all.size, 70000)
+      assertEquals(day.size, 10)
+      assert(day.forall(_.date == d(3, 2)))
+    }
   }
 }

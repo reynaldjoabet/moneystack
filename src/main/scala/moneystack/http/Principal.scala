@@ -12,18 +12,19 @@ import org.http4s.headers.Authorization
 
 /**
  * Resolves the caller from an `Authorization: Bearer <token>` header. The user is looked up on every
- * request, so a deleted user or a changed role takes effect at once rather than when the token expires.
+ * request, so a deleted user, a changed role or revoked tokens take effect at once rather than when the
+ * token expires.
  */
 final class Principal[F[_]: Sync](tokens: Tokens[F], users: Users[F]) {
 
-  /** The signed-in user, or `Unauthenticated` without a valid token for a user who still exists. */
+  /** The signed-in user, or `Unauthenticated` without a valid, unrevoked token for a user who still exists. */
   def user(req: Request[F]): F[Either[AuthFailure, User]] =
     Principal.bearer(req) match {
       case None        => Sync[F].pure(Left(AuthFailure.Unauthenticated))
       case Some(token) =>
         tokens.verify(token).flatMap {
-          case None      => Sync[F].pure(Left(AuthFailure.Unauthenticated))
-          case Some(uid) => users.find(uid).map(_.toRight(AuthFailure.Unauthenticated))
+          case None    => Sync[F].pure(Left(AuthFailure.Unauthenticated))
+          case Some(c) => users.find(c.user).map(_.filter(_.tokenVersion == c.version).toRight(AuthFailure.Unauthenticated))
         }
     }
 

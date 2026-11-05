@@ -72,6 +72,9 @@ object Json {
   final case class SignupBody(email: Email, password: String, displayName: DisplayName, locale: Locale)
   given Decoder[SignupBody] = deriveDecoder
 
+  final case class ChangePasswordBody(currentPassword: String, newPassword: String)
+  given Decoder[ChangePasswordBody] = deriveDecoder
+
   final case class SetRoleBody(role: Role)
   given Decoder[SetRoleBody] = deriveDecoder
 

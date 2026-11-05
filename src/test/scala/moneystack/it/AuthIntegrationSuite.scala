@@ -26,8 +26,8 @@ import scala.concurrent.duration.*
 class AuthIntegrationSuite extends moneystack.testkit.PostgresSuite[HttpApp[IO]] {
 
   private val config = AppConfig(
-    db = DbConfig("localhost", 5432, "test", None, "test", 4, migrateOnStart = false, DbSsl.Disabled),
-    http = HttpConfig(host"0.0.0.0", port"8080", 30.seconds, 1.minute, 1.second, 1024L * 1024, Nil),
+    db = DbConfig("localhost", 5432, "test", None, "test", 4, migrateOnStart = false, DbSsl.Disabled, 30.seconds, 1.minute),
+    http = HttpConfig(host"0.0.0.0", port"8080", 30.seconds, 1.minute, 1.second, 1024L * 1024, Nil, Duration.Zero),
     auth = AuthConfig(Secret("integration-test-secret-of-32-bytes!"), "moneystack", 1.hour),
     telemetry = TelemetryConfig(enabled = false),
     ledger = LedgerConfig(CurrencyCode.USD)
@@ -179,6 +179,45 @@ class AuthIntegrationSuite extends moneystack.testkit.PostgresSuite[HttpApp[IO]]
       assertEquals(mine._1, Status.Ok)
       assertEquals(theirs._1, Status.NotFound)
       assertEquals(write._1, Status.NotFound)
+    }
+  }
+
+  // ---- revocation ----
+
+  private def login(email: String, password: String) =
+    call(Method.POST, uri"/auth/login", body = Some(Json.obj("email" -> email.asJson, "password" -> password.asJson)))
+
+  test("changing the password revokes earlier tokens and answers a working one") {
+    val email = freshEmail
+    val body  = Json.obj("currentPassword" -> "correct horse battery".asJson, "newPassword" -> "a new horse battery".asJson)
+    for {
+      (old, _) <- signup(email)
+      wrong    <-
+        call(Method.POST, uri"/auth/password", token = Some(old), body = Some(body.deepMerge(Json.obj("currentPassword" -> "nope".asJson))))
+      changed  <- call(Method.POST, uri"/auth/password", token = Some(old), body = Some(body))
+      oldNow   <- call(Method.GET, uri"/auth/me", token = Some(old))
+      fresh    <- call(Method.GET, uri"/auth/me", token = str(changed._2, "token"))
+      newLogin <- login(email, "a new horse battery")
+    } yield {
+      assertEquals(wrong._1, Status.Forbidden)
+      assertEquals(changed._1, Status.Ok)
+      assertEquals(oldNow._1, Status.Unauthorized)
+      assertEquals(fresh._1, Status.Ok)
+      assertEquals(newLogin._1, Status.Ok)
+    }
+  }
+
+  test("signing out everywhere revokes every token the user holds") {
+    val email = freshEmail
+    for {
+      (first, _) <- signup(email)
+      second     <- login(email, "correct horse battery").map(r => str(r._2, "token").get)
+      out        <- call(Method.POST, uri"/auth/logout-all", token = Some(second))
+      a          <- call(Method.GET, uri"/auth/me", token = Some(first))
+      b          <- call(Method.GET, uri"/auth/me", token = Some(second))
+    } yield {
+      assertEquals(out._1, Status.NoContent)
+      assertEquals((a._1, b._1), (Status.Unauthorized, Status.Unauthorized))
     }
   }
 }

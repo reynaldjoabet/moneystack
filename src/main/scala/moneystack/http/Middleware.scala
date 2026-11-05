@@ -27,10 +27,14 @@ object Middleware {
     val shared   = if (cfg.corsOrigins.isEmpty) timed else cors(cfg.corsOrigins)(timed)
     val secured  = securityHeaders(shared)
     val rendered = errors(log)(secured)
-    // Authorization and Cookie are redacted by default; bodies are never logged.
-    val logged = Logger.httpApp(logHeaders = true, logBody = false)(rendered)
+    // Authorization and Cookie are redacted by default; bodies are never logged. Probes, which orchestrators
+    // send every few seconds, are left out.
+    val logger = Logger.httpApp(logHeaders = true, logBody = false)(rendered)
+    val logged = Kleisli((req: Request[F]) => if (isProbe(req)) rendered.run(req) else logger.run(req))
     RequestId.httpApp(logged)
   }
+
+  private def isProbe[F[_]](req: Request[F]): Boolean = req.pathInfo.segments.headOption.exists(_.encoded == "health")
 
   /** The id `RequestId` assigned, as echoed in the `X-Request-ID` response header. */
   def requestId[F[_]](req: Request[F]): String =

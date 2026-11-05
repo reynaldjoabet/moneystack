@@ -41,7 +41,8 @@ object Main extends IOApp.Simple {
       )
       pool     <- sessionPool(cfg.db, telemetry)
       _        <- Resource.eval(Passwords.warmUp[IO])
-      routes   <- App.routes(cfg, pool, logger)
+      draining <- Resource.eval(Ref[IO].of(false))
+      routes   <- App.routes(cfg, pool, logger, draining.get)
       measured <- Resource.eval(Telemetry.metrics(telemetry)(routes))
       app      <- Resource.eval(Telemetry.tracing(telemetry)(Middleware[IO](cfg.http, logger)(measured.orNotFound)))
       _        <- EmberServerBuilder.default[IO]
@@ -52,6 +53,11 @@ object Main extends IOApp.Simple {
         .withHttpApp(app)
         .build
       _ <- Resource.eval(logger.info(s"Listening on http://${cfg.http.host}:${cfg.http.port}"))
+      // Released before the server (resources release in reverse): report not-ready, then give load balancers
+      // `drainDelay` to notice before Ember stops accepting connections and drains in-flight requests.
+      _ <- Resource.onFinalize(
+        draining.set(true) *> logger.info(s"Shutting down: draining for ${cfg.http.drainDelay}") *> IO.sleep(cfg.http.drainDelay)
+      )
     } yield ()
 
   private def sessionPool(db: DbConfig, telemetry: Telemetry): Resource[IO, Resource[IO, Session[IO]]] = {
@@ -67,6 +73,12 @@ object Main extends IOApp.Simple {
       .withPort(db.port)
       .withDatabase(db.database)
       .withSSL(ssl)
+      .withConnectionParameters(
+        Session.DefaultConnectionParameters ++ Map(
+          "statement_timeout"                   -> db.statementTimeout.toMillis.toString,
+          "idle_in_transaction_session_timeout" -> db.idleInTransactionTimeout.toMillis.toString
+        )
+      )
     db.password
       .fold(base.withUser(db.user))(p => base.withUserAndPassword(db.user, p.value))
       .pooled(db.poolMax)

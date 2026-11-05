@@ -17,10 +17,18 @@ import org.http4s.HttpRoutes
 import org.typelevel.log4cats.Logger
 import skunk.Session
 
+import scala.concurrent.duration.*
+
 /** Every route of the app over one session pool. `Main` serves it; the integration suites call it directly. */
 object App {
 
-  def routes(cfg: AppConfig, pool: Resource[IO, Session[IO]], logger: Logger[IO]): Resource[IO, HttpRoutes[IO]] =
+  /** `draining` turns readiness to 503 once shutdown begins. */
+  def routes(
+      cfg: AppConfig,
+      pool: Resource[IO, Session[IO]],
+      logger: Logger[IO],
+      draining: IO[Boolean] = IO.pure(false)
+  ): Resource[IO, HttpRoutes[IO]] =
     for {
       // ---- repositories ----
       usersR <- Resource.pure(Users.make[IO](pool))
@@ -49,7 +57,7 @@ object App {
       // ---- auth ----
       tokens    = Tokens.make[IO](cfg.auth.jwtSecret.value, cfg.auth.issuer, cfg.auth.tokenTtl)
       principal = new Principal[IO](tokens, usersR)
-    } yield new HealthRoutes[IO](pool).routes <+>
+    } yield new HealthRoutes[IO](pool, 2.seconds, draining).routes <+>
       new Routes[IO](
         principal,
         tokens,
