@@ -346,6 +346,63 @@ class BudgetIntegrationSuite extends moneystack.testkit.PostgresSuite[BudgetModu
     } yield assertEquals(vis, Nil)
   }
 
+  test("a report for one period keeps the category of an older purchase it refunds") {
+    val me = newUser
+    for {
+      w    <- wallet(me, "Checking")
+      food <- category(me, "Groceries")
+      old  <- ok(money.addTransaction(me, txn(w, TxKind.Expense, 5_000, d(1, 10), "Shop", cat = Some(food.id))))
+      _    <- ok(money.addTransaction(me, txn(w, TxKind.Income, 1_000, d(3, 5), "Refund", refundOf = Some(old.id))))
+      march = Period(d(3, 1), d(3, 31))
+      sum  <- ok(env.insights.summary(me, march, usd, None))
+      cats <- ok(env.insights.categories(me, march, CategoryKind.Expense, usd, None))
+      rec  <- ok(env.insights.recap(me, YearMonth.of(2026, 2), usd))
+    } yield {
+      assertEquals(sum.expenseMinor, -1_000L, "only the refund falls in March")
+      assertEquals(sum.transactions, 1)
+      assertEquals(cats.map(c => c.name -> c.amountMinor), List("Groceries" -> -1_000L))
+      assertEquals(rec.previousExpenseMinor, 5_000L, "a recap reads the month before as well")
+    }
+  }
+
+  test("balances summed in SQL match the same sum over the transactions") {
+    val me = newUser
+    for {
+      a   <- wallet(me, "A", opening = 1_000L)
+      b   <- wallet(me, "B", opening = 50L)
+      _   <- ok(money.addTransaction(me, txn(a, TxKind.Income, 700, d(1, 2), "In")))
+      _   <- ok(money.addTransaction(me, txn(a, TxKind.Expense, 300, d(1, 3), "Out")))
+      _   <- ok(money.addTransaction(me, txn(a, TxKind.Transfer, 200, d(1, 4), "Same", to = Some(b))))
+      _   <- ok(money.addTransaction(me, txn(b, TxKind.Transfer, 90, d(1, 5), "Different", to = Some(a), toAmount = Some(80L))))
+      _   <- ok(money.addTransaction(me, txn(b, TxKind.Expense, 5, d(2, 1), "Later")))
+      all <- moneystack.budget.db.Transactions.make[IO](sessions).forWallets(List(a.id, b.id))
+      jan <- ok(env.insights.balances(me, d(1, 31), usd))
+      feb <- ok(env.insights.balances(me, d(2, 28), usd))
+    } yield {
+      def expected(asOf: LocalDate) =
+        Reports.balances(List(a, b), all, asOf, moneystack.platform.FxTable.unity, usd).toOption.get.map(x =>
+          x.walletId -> x.balanceMinor
+        ).toSet
+      assertEquals(jan.wallets.map(x => x.walletId -> x.balanceMinor).toSet, expected(d(1, 31)))
+      assertEquals(feb.wallets.map(x => x.walletId -> x.balanceMinor).toSet, expected(d(2, 28)))
+      assertEquals(jan.wallets.map(x => x.walletId -> x.balanceMinor).toSet, Set(a.id -> 1_280L, b.id -> 160L))
+    }
+  }
+
+  test("the streak counts only days the user recorded something") {
+    val (me, friend) = (newUser, newUser)
+    for {
+      w <- wallet(me, "Shared")
+      _ <- ok(money.addTransaction(me, txn(w, TxKind.Expense, 1, d(4, 9), "One")))
+      _ <- ok(money.addTransaction(me, txn(w, TxKind.Expense, 1, d(4, 10), "Two")))
+      s <- env.insights.streak(me, d(4, 10))
+      n <- env.insights.streak(friend, d(4, 10))
+    } yield {
+      assertEquals(s, Streak(2, 2, true))
+      assertEquals(n, Streak(0, 0, false))
+    }
+  }
+
   test("a wallet with more transactions than Postgres allows bind parameters still loads") {
     val owner = newUser
     for {

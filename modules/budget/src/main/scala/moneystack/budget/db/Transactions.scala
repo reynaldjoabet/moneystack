@@ -1,5 +1,6 @@
 package moneystack.budget.db
 
+import moneystack.domain.UserId
 import moneystack.budget.domain.*
 
 import cats.effect.*
@@ -26,14 +27,23 @@ trait Transactions[F[_]] {
 
   def find(id: TransactionId): F[Option[Transaction]]
 
+  /** These transactions, without their splits. */
+  def byIds(ids: List[TransactionId]): F[List[Transaction]]
+
+  /** What transactions dated up to `asOf` moved in or out of each of `wallets`. */
+  def moved(wallets: List[WalletId], asOf: LocalDate): F[Map[WalletId, Long]]
+
+  /** The days on which `user` recorded a transaction touching `wallets`. */
+  def loggedDays(wallets: List[WalletId], user: UserId): F[Set[LocalDate]]
+
   /** The import keys already recorded in `wallet`, for de-duplicating a CSV import. */
   def importKeys(wallet: WalletId): F[Set[String]]
 }
 
 object Transactions {
 
-  import Codecs.{split as splitC, transaction as txC, transactionId as txIdC, walletId as walletIdC}
-  import skunk.codec.all.{date, int4, varchar}
+  import Codecs.{split as splitC, transaction as txC, transactionId as txIdC, userId as userIdC, walletId as walletIdC}
+  import skunk.codec.all.{date, int4, int8, varchar}
 
   def make[F[_]: Concurrent](pool: Resource[F, Session[F]]): Transactions[F] = new Transactions[F] {
 
@@ -97,6 +107,18 @@ object Transactions {
         ))
       }
 
+    def byIds(ids: List[TransactionId]): F[List[Transaction]] =
+      if (ids.isEmpty) Concurrent[F].pure(Nil)
+      else pool.use(_.prepare(Q.byIds(ids.size)).flatMap(_.stream(ids, 256).compile.toList))
+
+    def moved(wallets: List[WalletId], asOf: LocalDate): F[Map[WalletId, Long]] =
+      if (wallets.isEmpty) Concurrent[F].pure(Map.empty)
+      else pool.use(_.prepare(Q.moved(wallets.size)).flatMap(_.stream((wallets, asOf, wallets, asOf), 256).compile.to(Map)))
+
+    def loggedDays(wallets: List[WalletId], user: UserId): F[Set[LocalDate]] =
+      if (wallets.isEmpty) Concurrent[F].pure(Set.empty)
+      else pool.use(_.prepare(Q.loggedDays(wallets.size)).flatMap(_.stream((user, (wallets, wallets)), 1024).compile.to(Set)))
+
     def importKeys(wallet: WalletId): F[Set[String]] =
       pool.use(_.prepare(Q.importKeys).flatMap(_.stream(wallet, 1024).compile.to(Set)))
   }
@@ -134,6 +156,22 @@ object Transactions {
 
     val byId: Query[TransactionId, Transaction] =
       sql"SELECT $cols FROM budget.transactions WHERE id = $txIdC".query(txC)
+
+    def byIds(n: Int): Query[List[TransactionId], Transaction] =
+      sql"SELECT $cols FROM budget.transactions WHERE id IN (${txIdC.list(n)})".query(txC)
+
+    /** The SQL form of `Reports.effects`: the two sides of a transfer land in different wallets. */
+    def moved(n: Int): Query[(List[WalletId], LocalDate, List[WalletId], LocalDate), (WalletId, Long)] =
+      sql"""SELECT wallet, sum(delta)::int8 FROM (
+              SELECT wallet_id AS wallet, CASE kind WHEN 'income' THEN amount_minor ELSE -amount_minor END AS delta
+              FROM budget.transactions WHERE wallet_id IN (${walletIdC.list(n)}) AND tx_date <= $date
+              UNION ALL
+              SELECT to_wallet_id, coalesce(to_amount_minor, amount_minor)
+              FROM budget.transactions WHERE to_wallet_id IN (${walletIdC.list(n)}) AND tx_date <= $date
+            ) AS movements GROUP BY wallet""".query(walletIdC *: int8)
+
+    def loggedDays(n: Int): Query[(UserId, (List[WalletId], List[WalletId])), LocalDate] =
+      sql"SELECT DISTINCT t.tx_date FROM budget.transactions t WHERE t.created_by = $userIdC AND ${touching(n)}".query(date)
 
     val importKeys: Query[WalletId, String] =
       sql"SELECT import_key FROM budget.transactions WHERE wallet_id = $walletIdC AND import_key IS NOT NULL".query(varchar(64))

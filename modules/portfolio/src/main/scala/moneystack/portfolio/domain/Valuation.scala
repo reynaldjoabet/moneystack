@@ -59,7 +59,7 @@ object Valuation {
       case None    => (pos.lastTradePrice.orElse(pos.averageCost).getOrElse(BigDecimal(0)), false)
     }
 
-  /** Daily values from `from` to `to`; history before `from` is replayed but not emitted. */
+  /** Daily values from `from` to `to`. History before `from` is replayed for books and flows, but not valued. */
   def series(scope: Scope, ctx: Engine.Context, from: LocalDate, to: LocalDate): Either[PortfolioError, List[DailyValue]] = {
     val tracked   = scope.accounts.filter(_.tracking == Tracking.Activities)
     val balanced  = scope.accounts.filter(_.tracking == Tracking.Balances)
@@ -85,24 +85,32 @@ object Valuation {
                   .map(m.updated(acct.id, _))
               }
             }
-            open      = stepped.values.toList
-            todayFlow = open.flatMap(b => b.flows.drop(books(b.accountId).flows.size)).filter(scope.counts).map(_.amountBase).sum
-            invested <- positionsValue(open, ctx, day)
-            cash     <- cashValue(open, ctx, day)
-            balances <- balancedValue(balanced, snaps, ctx, day)
+            open     = stepped.values.toList
+            reported = !day.isBefore(from)
+            // Only a book that changed today has new flows.
+            changed   = open.filter(b => b ne books(b.accountId))
+            todayFlow = changed.flatMap(b => b.flows.drop(books(b.accountId).flows.size)).filter(scope.counts).map(_.amountBase).sum
+            invested <- if (reported) positionsValue(open, ctx, day) else Right((BigDecimal(0), BigDecimal(0)))
+            cash     <- if (reported) cashValue(open, ctx, day) else Right(BigDecimal(0))
+            // A snapshot before `from` still changes what was contributed.
+            balances <-
+              if (reported || snaps.values.exists(_.contains(day))) balancedValue(balanced, snaps, ctx, day)
+              else Right((BigDecimal(0), BigDecimal(0)))
             (balValue, balFlow) = balances
             flow                = todayFlow + balFlow
-            total               = invested._1 + cash + balValue
-            dv                  = DailyValue(
-              day,
-              round2(invested._1 + balValue),
-              round2(cash),
-              round2(total),
-              round2(invested._2),
-              round2(contributed + flow),
-              round2(flow)
-            )
-          } yield (stepped, contributed + flow, if (day.isBefore(from)) out else dv :: out)
+            shown               =
+              if (reported)
+                DailyValue(
+                  day,
+                  round2(invested._1 + balValue),
+                  round2(cash),
+                  round2(invested._1 + cash + balValue),
+                  round2(invested._2),
+                  round2(contributed + flow),
+                  round2(flow)
+                ) :: out
+              else out
+          } yield (stepped, contributed + flow, shown)
         }
       }.map(_._3.reverse)
     }

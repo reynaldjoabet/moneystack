@@ -7,6 +7,8 @@ import cats.syntax.all.*
 import skunk.*
 import skunk.implicits.*
 
+import java.time.LocalDate
+
 /** The shared instrument catalogue with classifications, quotes and FX rates. */
 trait Market[F[_]] {
   def createAsset(a: Asset): F[Asset]
@@ -19,6 +21,9 @@ trait Market[F[_]] {
 
   def upsertQuotes(qs: List[Quote]): F[Unit]
   def quotes(assets: List[AssetId]): F[List[Quote]]
+
+  /** Each asset's latest quote on or before `date`. */
+  def latestQuotes(assets: List[AssetId], date: LocalDate): F[List[Quote]]
   def upsertFx(rs: List[FxRate]): F[Unit]
   def fxRates(): F[List[FxRate]]
 }
@@ -58,6 +63,10 @@ object Market {
       if (assets.isEmpty) Concurrent[F].pure(Nil)
       else pool.use(_.prepare(Q.quotes(assets.size)).flatMap(_.stream(assets, 1024).compile.toList))
 
+    def latestQuotes(assets: List[AssetId], date: LocalDate): F[List[Quote]] =
+      if (assets.isEmpty) Concurrent[F].pure(Nil)
+      else pool.use(_.prepare(Q.latestQuotes(assets.size)).flatMap(_.stream((date, assets), 256).compile.toList))
+
     def upsertFx(rs: List[FxRate]): F[Unit] =
       pool.use(s => s.transaction.use(_ => s.prepare(Q.upsertFx).flatMap(pc => rs.traverse_(pc.execute))))
 
@@ -90,6 +99,16 @@ object Market {
 
     def quotes(n: Int): Query[List[AssetId], Quote] =
       sql"SELECT asset_id, quote_date, close FROM portfolio.quotes WHERE asset_id IN (${assetIdC.list(n)})".query(quoteC)
+
+    def latestQuotes(n: Int): Query[(LocalDate, List[AssetId]), Quote] = {
+      import skunk.codec.all.date
+      sql"""SELECT q.asset_id, q.quote_date, q.close FROM portfolio.assets a
+            CROSS JOIN LATERAL (
+              SELECT asset_id, quote_date, close FROM portfolio.quotes
+              WHERE asset_id = a.id AND quote_date <= $date ORDER BY quote_date DESC LIMIT 1
+            ) q
+            WHERE a.id IN (${assetIdC.list(n)})""".query(quoteC)
+    }
 
     val upsertFx: Command[FxRate] =
       sql"""INSERT INTO portfolio.fx_rates (from_ccy, to_ccy, rate_date, rate) VALUES ${fxC.values}

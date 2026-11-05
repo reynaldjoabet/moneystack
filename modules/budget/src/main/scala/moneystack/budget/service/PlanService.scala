@@ -169,9 +169,15 @@ object PlanService {
         plans.deleteBudget(owner, id).map(found => Either.cond(found, (), BudgetError.BudgetNotFound(id)))
 
       def budgets(owner: UserId, asOf: LocalDate): F[Either[BudgetError, List[BudgetView]]] =
-        (plans.budgets(owner), loader.load(owner)).tupled.map { case (bs, snap) =>
-          bs.filterNot(_.archived).traverse { b =>
-            snap.entries(b.currency).map(es => BudgetView(b, Reports.status(b, es, snap.categories, asOf)))
+        plans.budgets(owner).map(_.filterNot(_.archived)).flatMap { bs =>
+          // A budget reads its current period and, for rollover, the one before.
+          val periods =
+            bs.flatMap(b => Periods.periodOf(b, asOf).toList.flatMap(p => p :: (if (b.rollover) Periods.previous(b, p).toList else Nil)))
+          val span = Option.when(periods.nonEmpty)(Period(periods.map(_.from).min, periods.map(_.to).max))
+          span.fold(loader.reference(owner))(loader.within(owner, _)).map { snap =>
+            bs.map(_.currency).distinct.traverse(c => snap.entries(c).map(c -> _)).map(_.toMap).map { byCurrency =>
+              bs.map(b => BudgetView(b, Reports.status(b, byCurrency(b.currency), snap.categories, asOf)))
+            }
           }
         }
 
@@ -337,7 +343,7 @@ object PlanService {
         }
 
       def subscriptionCost(owner: UserId, currency: CurrencyCode, asOf: LocalDate): F[Either[BudgetError, SubscriptionCost]] =
-        (plans.schedules(owner), loader.load(owner)).tupled.map { case (ss, snap) =>
+        (plans.schedules(owner), loader.reference(owner)).tupled.map { case (ss, snap) =>
           val subs =
             ss.filter(s => s.active && s.kind == ScheduleKind.Subscription && s.txKind == TxKind.Expense && Periods.nextDue(s).isDefined)
           subs.traverse { s =>

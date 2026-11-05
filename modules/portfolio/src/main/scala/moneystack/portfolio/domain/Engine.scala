@@ -8,9 +8,10 @@ import java.time.LocalDate
 final case class Lot(activityId: ActivityId, acquiredOn: LocalDate, quantity: BigDecimal, cost: BigDecimal, costBase: BigDecimal)
 
 final case class Position(assetId: AssetId, currency: CurrencyCode, lots: Vector[Lot], lastTradePrice: Option[BigDecimal]) {
-  def quantity: BigDecimal            = lots.map(_.quantity).sum
-  def cost: BigDecimal                = lots.map(_.cost).sum
-  def costBase: BigDecimal            = lots.map(_.costBase).sum
+  // Summed once: a position is immutable, and a daily series asks for these on every day it stays open.
+  lazy val quantity: BigDecimal       = lots.map(_.quantity).sum
+  lazy val cost: BigDecimal           = lots.map(_.cost).sum
+  lazy val costBase: BigDecimal       = lots.map(_.costBase).sum
   def averageCost: Option[BigDecimal] = Option.when(quantity > 0)(cost / quantity)
 }
 
@@ -76,6 +77,10 @@ object Engine {
   /** Activities in the order they are applied: by date, then as entered. */
   def ordered(activities: List[Activity]): List[Activity] =
     activities.sortBy(a => (a.date, a.createdAt, a.id.value))
+
+  /** Asset transfers are marked at the price on their own date, so replaying them needs quote history. */
+  def needsQuoteHistory(a: Activity): Boolean =
+    (a.kind == ActivityType.TransferIn || a.kind == ActivityType.TransferOut) && a.assetId.isDefined
 
   def replay(accountId: InvestmentAccountId, activities: List[Activity], ctx: Context): Either[PortfolioError, Book] =
     ordered(activities).foldLeft[Either[PortfolioError, Book]](Right(Book.empty(accountId)))((acc, a) => acc.flatMap(step(_, a, ctx)))

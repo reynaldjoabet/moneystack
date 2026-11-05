@@ -270,6 +270,29 @@ class PortfolioIntegrationSuite extends moneystack.testkit.PostgresSuite[Portfol
     }
   }
 
+  test("a valuation on one date uses the latest price, and asset transfers still see prices on their own dates") {
+    val owner = UserId.assume(UUID.randomUUID())
+    for {
+      acct <- account(owner, "Transfers")
+      gold <- asset("GOLD", AssetKind.Etf, usd)
+      _    <- ok(pf.addQuotes(List(
+        Quote(gold.id, d(1, 10), BigDecimal(100)),
+        Quote(gold.id, d(2, 10), BigDecimal(200)),
+        Quote(gold.id, d(3, 10), BigDecimal(300))
+      )))
+      _    <- ok(pf.addActivity(owner, activity(acct, ActivityType.TransferIn, d(2, 15), Some(gold), Some("2"), Some("50"))))
+      mid  <- ok(pf.holdings(owner, None, d(3, 1), usd))
+      day  <- ok(pf.history(owner, None, d(2, 15), d(2, 15), usd))
+      late <- ok(pf.holdings(owner, None, d(4, 1), usd))
+      vals <- ok(pf.accountValues(owner, d(3, 1), usd))
+    } yield {
+      assertEquals(mid.positions.map(_.price), List(BigDecimal(200)), "the last close on or before the date")
+      assertEquals(late.positions.map(_.price), List(BigDecimal(300)))
+      assertEquals(day.map(_.flow), List(BigDecimal("400.00")), "marked at the price when it arrived")
+      assertEquals(vals(acct.id), BigDecimal(400))
+    }
+  }
+
   test("owners are isolated") {
     for {
       mine   <- account(me, "Private")

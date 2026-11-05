@@ -267,15 +267,23 @@ object Reports {
       asOf: LocalDate,
       fx: FxTable,
       currency: CurrencyCode
-  ): Either[BudgetError, List[WalletBalance]] = {
-    val moved = txs.filter(!_.date.isAfter(asOf)).flatMap(effects).groupMapReduce(_._1)(_._2)(_ + _)
+  ): Either[BudgetError, List[WalletBalance]] =
+    balances(wallets, txs.filter(!_.date.isAfter(asOf)).flatMap(effects).groupMapReduce(_._1)(_._2)(_ + _), asOf, fx, currency)
+
+  /** Balances from what has already `moved` in or out of each wallet. */
+  def balances(
+      wallets: List[Wallet],
+      moved: Map[WalletId, Long],
+      asOf: LocalDate,
+      fx: FxTable,
+      currency: CurrencyCode
+  ): Either[BudgetError, List[WalletBalance]] =
     wallets.foldLeft[Either[BudgetError, List[WalletBalance]]](Right(Nil)) { (acc, w) =>
       val native = w.openingBalanceMinor + moved.getOrElse(w.id, 0L)
       acc.flatMap(l =>
         convert(fx, native, w.currency, currency, asOf).map(b => WalletBalance(w.id, w.name, w.kind, w.currency, native, b) :: l)
       )
     }.map(_.reverse)
-  }
 
   /** Consecutive days with at least one transaction, counting back from today (or yesterday if nothing yet today). */
   def streak(dates: Set[LocalDate], today: LocalDate): Streak = {

@@ -241,7 +241,13 @@ object PortfolioService {
       // ---- loading ----
 
       /** The owner's accounts (optionally a subset), their data, and the pricing context in `base`. */
-      private def load(owner: UserId, subset: Option[List[InvestmentAccountId]], base: CurrencyCode): R[(Scope, Engine.Context)] =
+      /** `valuedOn` is the one date a caller values positions on, if it only needs one: its latest prices are then enough. */
+      private def load(
+          owner: UserId,
+          subset: Option[List[InvestmentAccountId]],
+          base: CurrencyCode,
+          valuedOn: Option[LocalDate] = None
+      ): R[(Scope, Engine.Context)] =
         for {
           all    <- lift(accountsRepo.list(owner))
           chosen <- subset.fold(EitherT.rightT[F, PortfolioError](all))(ids =>
@@ -250,8 +256,10 @@ object PortfolioService {
           acts    <- lift(activityRepo.forAccounts(chosen.map(_.id)))
           snaps   <- lift(accountsRepo.snapshots(chosen.map(_.id)))
           assetsL <- lift(market.assets())
-          quotes  <- lift(market.quotes(acts.flatMap(_.assetId).distinct))
-          rates   <- lift(market.fxRates())
+          held = acts.flatMap(_.assetId).distinct
+          quotes <-
+            lift(valuedOn.filterNot(_ => acts.exists(Engine.needsQuoteHistory)).fold(market.quotes(held))(market.latestQuotes(held, _)))
+          rates <- lift(market.fxRates())
         } yield (
           Scope(chosen, acts.groupBy(_.accountId), snaps.groupBy(_.accountId)),
           Engine.Context(assetsL.map(a => a.id -> a).toMap, PriceTable(quotes), FxTable(rates), base)
@@ -407,7 +415,7 @@ object PortfolioService {
           base: CurrencyCode
       ): F[Either[PortfolioError, Holdings]] =
         (for {
-          loaded <- load(owner, accounts, base)
+          loaded <- load(owner, accounts, base, Some(asOf))
           (scope, ctx) = loaded
           bs  <- EitherT.fromEither[F](books(scope, ctx, asOf))
           hs  <- EitherT.fromEither[F](Valuation.holdings(bs, ctx, asOf))
@@ -484,7 +492,7 @@ object PortfolioService {
           base: CurrencyCode
       ): F[Either[PortfolioError, Map[InvestmentAccountId, BigDecimal]]] =
         (for {
-          loaded <- load(owner, None, base)
+          loaded <- load(owner, None, base, Some(asOf))
           (scope, ctx) = loaded
           values <- EitherT.fromEither[F](scope.accounts.traverse { a =>
             Valuation.series(Scope(List(a), scope.activities, scope.snapshots), ctx, asOf, asOf)

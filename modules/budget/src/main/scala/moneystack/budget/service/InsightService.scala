@@ -46,15 +46,17 @@ object InsightService {
 
   def make[F[_]: Async](loader: Loader[F]): InsightService[F] = new InsightService[F] {
 
+    /** Entries for a report that looks no further than `period`. */
     private def entries(
         user: UserId,
+        period: Period,
         currency: CurrencyCode,
         wallets: Option[List[WalletId]]
     ): F[Either[BudgetError, (Snapshot, List[Entry])]] =
-      loader.load(user).map(snap => snap.entries(currency, wallets).map(snap -> _))
+      loader.within(user, period).map(snap => snap.entries(currency, wallets).map(snap -> _))
 
     def summary(user: UserId, period: Period, currency: CurrencyCode, wallets: Option[List[WalletId]]): F[Either[BudgetError, Summary]] =
-      entries(user, currency, wallets).map(_.map { case (_, es) => Reports.summary(es, period, currency) })
+      entries(user, period, currency, wallets).map(_.map { case (_, es) => Reports.summary(es, period, currency) })
 
     def categories(
         user: UserId,
@@ -63,7 +65,7 @@ object InsightService {
         currency: CurrencyCode,
         wallets: Option[List[WalletId]]
     ): F[Either[BudgetError, List[CategoryTotal]]] =
-      entries(user, currency, wallets).map(_.map { case (snap, es) => Reports.byCategory(es, period, kind, snap.categories) })
+      entries(user, period, currency, wallets).map(_.map { case (snap, es) => Reports.byCategory(es, period, kind, snap.categories) })
 
     def trend(
         user: UserId,
@@ -72,19 +74,20 @@ object InsightService {
         currency: CurrencyCode,
         wallets: Option[List[WalletId]]
     ): F[Either[BudgetError, List[TrendPoint]]] =
-      entries(user, currency, wallets).map(_.map { case (_, es) => Reports.trend(es, period, bucket) })
+      entries(user, period, currency, wallets).map(_.map { case (_, es) => Reports.trend(es, period, bucket) })
 
     def compare(user: UserId, period: Period, currency: CurrencyCode): F[Either[BudgetError, List[CategoryChange]]] =
-      entries(user, currency, None).map(_.map { case (snap, es) => Reports.compare(es, period, snap.categories) })
+      entries(user, Period(Reports.previousPeriod(period).from, period.to), currency, None)
+        .map(_.map { case (snap, es) => Reports.compare(es, period, snap.categories) })
 
     def cashflow(user: UserId, period: Period, currency: CurrencyCode): F[Either[BudgetError, List[FlowLink]]] =
-      entries(user, currency, None).map(_.map { case (snap, es) => Reports.cashflow(es, period, snap.categories) })
+      entries(user, period, currency, None).map(_.map { case (snap, es) => Reports.cashflow(es, period, snap.categories) })
 
     def balances(user: UserId, asOf: LocalDate, currency: CurrencyCode): F[Either[BudgetError, Balances]] =
-      loader.load(user).map { snap =>
-        Reports.balances(snap.wallets, snap.transactions, asOf, snap.fx, currency).map(bs =>
-          Balances(asOf, currency, bs, bs.map(_.baseMinor).sum)
-        )
+      loader.reference(user).flatMap { snap =>
+        loader.moved(snap.wallets, asOf).map { moved =>
+          Reports.balances(snap.wallets, moved, asOf, snap.fx, currency).map(bs => Balances(asOf, currency, bs, bs.map(_.baseMinor).sum))
+        }
       }
 
     def balanceHistory(user: UserId, period: Period, currency: CurrencyCode): F[Either[BudgetError, List[(LocalDate, Long)]]] =
@@ -96,9 +99,10 @@ object InsightService {
       }
 
     def streak(user: UserId, today: LocalDate): F[Streak] =
-      loader.load(user).map(snap => Reports.streak(snap.transactions.filter(_.createdBy == user).map(_.date).toSet, today))
+      loader.loggedDays(user).map(Reports.streak(_, today))
 
     def recap(user: UserId, month: YearMonth, currency: CurrencyCode): F[Either[BudgetError, Recap]] =
-      entries(user, currency, None).map(_.map { case (snap, es) => Reports.recap(es, month, snap.categories, currency) })
+      entries(user, Period(month.minusMonths(1).atDay(1), month.atEndOfMonth), currency, None)
+        .map(_.map { case (snap, es) => Reports.recap(es, month, snap.categories, currency) })
   }
 }
