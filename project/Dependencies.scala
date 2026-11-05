@@ -12,14 +12,14 @@ object Dependencies {
     val munit          = "1.3.6"
     val munitCE        = "2.2.1"
     val testcontainers = "2.0.5"
-    val flyway         = "13.11.1"
+    val flyway         = "13.12.0"
     val postgresJdbc   = "42.7.14"
     val ciris          = "3.15.2"
     val jwt            = "12.0.0"
     val otel4s         = "1.1.0"
     val otel4sHttp4s   = "0.19.0"
-    // Matches the OpenTelemetry Java SDK that otel4s-oteljava is built against.
-    val otelJava = "1.64.0"
+    // The OpenTelemetry Java exporter; at least the SDK otel4s-oteljava is built against (1.64.0).
+    val otelJava = "1.67.0"
   }
 
 }

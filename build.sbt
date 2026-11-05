@@ -132,8 +132,13 @@ lazy val budget = (project in file("modules/budget"))
 lazy val packagingSettings = Seq(
   Compile / mainClass := Some("moneystack.Main"),
   // Size the heap from the container's memory limit, and let the orchestrator restart us on OOM rather than limp on.
-  Universal / javaOptions ++= Seq("-J-XX:MaxRAMPercentage=75", "-J-XX:+ExitOnOutOfMemoryError"),
-  dockerBaseImage      := "eclipse-temurin:21-jre-noble",
+  // The image's JVM is fixed at 25, so it can also allow Scala's LazyVals the sun.misc.Unsafe it still calls.
+  Universal / javaOptions ++= Seq(
+    "-J-XX:MaxRAMPercentage=75",
+    "-J-XX:+ExitOnOutOfMemoryError",
+    "-J--sun-misc-unsafe-memory-access=allow"
+  ),
+  dockerBaseImage      := "eclipse-temurin:25-jre-noble",
   dockerExposedPorts   := Seq(8080),
   dockerUpdateLatest   := true,
   Docker / packageName := "moneystack",
