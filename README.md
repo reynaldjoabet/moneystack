@@ -1,6 +1,9 @@
+<img src="docs/brand/logo-mark.svg" alt="" width="64">
+
 # moneystack
 
-Accounting, investments and budgeting on Scala 3, http4s, skunk and Postgres.
+Accounting, investments and budgeting on Scala 3, http4s, skunk and Postgres. The [proposed UI](docs/README.md)
+is in `docs/`.
 
 ## Running
 
