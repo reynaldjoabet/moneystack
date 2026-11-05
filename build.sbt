@@ -125,32 +125,56 @@ lazy val budget = (project in file("modules/budget"))
   .configs(Integration)
   .settings(commonSettings, featureModule, name := "moneystack-budget")
 
+/**
+ * `stage` builds a runnable app under `target/.../universal/stage`; `Docker/publishLocal` builds the
+ * `moneystack` image from it, running as a non-root user (native-packager's default).
+ */
+lazy val packagingSettings = Seq(
+  Compile / mainClass := Some("moneystack.Main"),
+  // Size the heap from the container's memory limit, and let the orchestrator restart us on OOM rather than limp on.
+  Universal / javaOptions ++= Seq("-J-XX:MaxRAMPercentage=75", "-J-XX:+ExitOnOutOfMemoryError"),
+  dockerBaseImage      := "eclipse-temurin:21-jre-noble",
+  dockerExposedPorts   := Seq(8080),
+  dockerUpdateLatest   := true,
+  Docker / packageName := "moneystack",
+  Docker / version     := version.value
+)
+
 lazy val root = (project in file("."))
   .dependsOn(core, accounting, portfolio, budget, testkit % Test)
   .aggregate(core, platform, testkit, accounting, portfolio, budget)
   .configs(Integration)
+  .enablePlugins(JavaAppPackaging, DockerPlugin)
   .settings(
     commonSettings,
     integrationSettings,
     name := "moneystack",
     // Fork for the same reason as featureModule: Testcontainers cleans up only on JVM exit.
     Test / fork := true,
+    packagingSettings,
     libraryDependencies ++= Seq(
-      "io.github.iltotore" %% "iron"                % Versions.iron,
-      "io.github.iltotore" %% "iron-skunk"          % Versions.iron,
-      "io.github.iltotore" %% "iron-circe"          % Versions.iron,
-      "org.tpolecat"       %% "skunk-core"          % Versions.skunk,
-      "org.http4s"         %% "http4s-ember-server" % Versions.http4s,
-      "org.http4s"         %% "http4s-ember-client" % Versions.http4s,
-      "org.http4s"         %% "http4s-circe"        % Versions.http4s,
-      "org.http4s"         %% "http4s-dsl"          % Versions.http4s,
-      "io.circe"           %% "circe-core"          % Versions.circe,
-      "io.circe"           %% "circe-generic"       % Versions.circe,
-      "io.circe"           %% "circe-parser"        % Versions.circe,
-      "org.typelevel"      %% "cats-effect"         % Versions.ce,
-      "is.cir"             %% "ciris"               % Versions.ciris,
-      "org.typelevel"      %% "log4cats-slf4j"      % Versions.log4cats,
-      "ch.qos.logback"      % "logback-classic"     % Versions.logback,
-      ("com.github.t3hnar" %% "scala-bcrypt"        % Versions.bcrypt).cross(CrossVersion.for3Use2_13)
+      "io.github.iltotore"   %% "iron"                                      % Versions.iron,
+      "io.github.iltotore"   %% "iron-skunk"                                % Versions.iron,
+      "io.github.iltotore"   %% "iron-circe"                                % Versions.iron,
+      "org.tpolecat"         %% "skunk-core"                                % Versions.skunk,
+      "org.http4s"           %% "http4s-ember-server"                       % Versions.http4s,
+      "org.http4s"           %% "http4s-ember-client"                       % Versions.http4s,
+      "org.http4s"           %% "http4s-circe"                              % Versions.http4s,
+      "org.http4s"           %% "http4s-dsl"                                % Versions.http4s,
+      "io.circe"             %% "circe-core"                                % Versions.circe,
+      "io.circe"             %% "circe-generic"                             % Versions.circe,
+      "io.circe"             %% "circe-parser"                              % Versions.circe,
+      "org.typelevel"        %% "cats-effect"                               % Versions.ce,
+      "is.cir"               %% "ciris"                                     % Versions.ciris,
+      "org.typelevel"        %% "log4cats-slf4j"                            % Versions.log4cats,
+      "ch.qos.logback"        % "logback-classic"                           % Versions.logback,
+      ("com.github.t3hnar"   %% "scala-bcrypt"                              % Versions.bcrypt).cross(CrossVersion.for3Use2_13),
+      "com.github.jwt-scala" %% "jwt-circe"                                 % Versions.jwt,
+      "org.typelevel"        %% "otel4s-oteljava"                           % Versions.otel4s,
+      "org.typelevel"        %% "otel4s-instrumentation-metrics"            % Versions.otel4s,
+      "org.http4s"           %% "http4s-otel4s-middleware-trace-server"     % Versions.otel4sHttp4s,
+      "org.http4s"           %% "http4s-otel4s-middleware-metrics"          % Versions.otel4sHttp4s,
+      "io.opentelemetry"      % "opentelemetry-exporter-otlp"               % Versions.otelJava % Runtime,
+      "io.opentelemetry"      % "opentelemetry-sdk-extension-autoconfigure" % Versions.otelJava % Runtime
     ) ++ testDeps
   )

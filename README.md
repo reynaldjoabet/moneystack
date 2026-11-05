@@ -4,23 +4,92 @@ Accounting, investments and budgeting on Scala 3, http4s, skunk and Postgres.
 
 ## Running
 
-Needs Postgres. Migrations run on startup.
+Needs Postgres and a signing secret for access tokens. Migrations run on startup.
 
 ```sh
-DB_USER=moneystack DB_NAME=moneystack sbt --client run
+DB_USER=moneystack DB_NAME=moneystack AUTH_JWT_SECRET=$(openssl rand -base64 48) sbt --client run
 ```
+
+Or build the image and run it next to Postgres:
+
+```sh
+sbt --client Docker/publishLocal   # builds moneystack:latest (runs as a non-root user)
+docker compose up                  # Postgres + the app on :8080; POSTGRES_PORT=55432 if 5432 is taken
+```
+
+### Configuration
+
+Every setting is an environment variable. All problems are reported at once on startup.
 
 | Variable | Default | |
 |---|---|---|
 | `DB_HOST` / `DB_PORT` | `localhost` / `5432` | |
 | `DB_USER`, `DB_NAME` | required | |
 | `DB_PASSWORD` | none | |
+| `DB_SSL` | `disable` | `trusted` encrypts without checking the certificate; `system` verifies it against the JVM trust store |
 | `DB_POOL_MAX` | `8` | session pool size |
 | `DB_MIGRATE_ON_START` | `true` | apply pending Flyway migrations before serving |
+| `AUTH_JWT_SECRET` | required | HS256 signing key, at least 32 bytes; rotating it signs everyone out |
+| `AUTH_TOKEN_TTL` | `1 hour` | how long an access token is valid |
+| `AUTH_ISSUER` | `moneystack` | `iss` claim, checked on every token |
 | `HTTP_HOST` / `HTTP_PORT` | `0.0.0.0` / `8080` | |
+| `HTTP_REQUEST_TIMEOUT` | `30 seconds` | answered 503 past this |
+| `HTTP_IDLE_TIMEOUT` | `60 seconds` | idle keep-alive connections are closed |
+| `HTTP_SHUTDOWN_TIMEOUT` | `30 seconds` | time in-flight requests get to finish on SIGTERM |
+| `HTTP_MAX_BODY_BYTES` | `1048576` | larger request bodies are answered 413 |
+| `HTTP_CORS_ORIGINS` | none | comma-separated origins allowed to call the API from a browser |
+| `TELEMETRY_ENABLED` | `false` | export traces and metrics over OTLP (see below) |
+| `LOG_FORMAT` | `text` | `json` for one JSON object per line |
+| `LOG_LEVEL` | `INFO` | root log level |
 | `LEDGER_BASE_CURRENCY` | `USD` | reporting currency |
 
 Health probes: `GET /health/live` (process up) and `GET /health/ready` (503 until Postgres answers).
+
+### Authentication
+
+`POST /auth/signup` and `POST /auth/login` answer with a bearer token:
+
+```json
+{ "token": "eyJ…", "tokenType": "Bearer", "expiresAt": "2026-11-05T06:41:12Z", "user": { "id": "…", "role": "investor" } }
+```
+
+Send it as `Authorization: Bearer <token>` on every other call. A missing, expired or forged token is
+401; a valid token for the wrong role is 403. Roles are read from the database on each request, so a role
+change applies at once. Portfolios are visible to their owner only; anyone else gets 404.
+
+Every new account is an investor. An admin changes roles with `PUT /admin/users/{id}/role` and
+`{"role": "analyst" | "accountant" | "admin" | "investor"}`. The first admin is promoted in SQL:
+
+```sql
+UPDATE users SET role = 'admin' WHERE email = 'you@example.com';
+```
+
+Passwords need 12 to 72 bytes (bcrypt reads no further). Tokens can't be revoked before they expire, so
+keep `AUTH_TOKEN_TTL` short. Rate-limit `/auth/login` at the load balancer or gateway.
+
+### Observability
+
+With `TELEMETRY_ENABLED=true` the app exports traces (one span per request and per SQL statement) and
+metrics (HTTP server, cats-effect runtime) over OTLP. The exporter reads the standard OpenTelemetry
+variables, for example:
+
+```sh
+TELEMETRY_ENABLED=true OTEL_EXPORTER_OTLP_ENDPOINT=http://collector:4317 OTEL_SERVICE_NAME=moneystack
+```
+
+Every response carries an `X-Request-ID`. A 500's body gives only that id, and the log line with the
+cause carries it too.
+
+### In production
+
+- Terminate TLS in front of the app (load balancer or ingress), and set `DB_SSL=system` when Postgres is remote.
+- Inject `AUTH_JWT_SECRET` and `DB_PASSWORD` from a secret store, never from the image or the repo.
+- Point liveness at `/health/live` and readiness at `/health/ready`. Give the pod a termination grace
+  period longer than `HTTP_SHUTDOWN_TIMEOUT`.
+- Replicas that start together are safe: Flyway holds a Postgres advisory lock, so one of them migrates and
+  the others wait. For long migrations, run the app once as a job, then deploy with `DB_MIGRATE_ON_START=false`.
+- The JVM sizes its heap to 75% of the container's memory limit and exits on `OutOfMemoryError`, so the
+  orchestrator restarts it.
 
 ## Developing
 

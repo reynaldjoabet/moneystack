@@ -22,6 +22,9 @@ object Migrations {
       .dataSource(target.jdbcUrl, target.user, target.password.orNull)
       .locations(s"classpath:db/migration/$module")
       .table(s"flyway_history_$module")
+      // Postgres may still be starting (a fresh container, or the app deployed alongside its database):
+      // retry the connection with backoff instead of failing the first attempt.
+      .connectRetries(10)
       // Modules share the public schema, so it already holds other modules' tables on a module's first run.
       // Baselining at 0 starts the history there without skipping V1.
       .baselineOnMigrate(true)

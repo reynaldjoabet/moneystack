@@ -3,7 +3,7 @@ package moneystack.portfolio.http
 import moneystack.domain.*
 import moneystack.portfolio.domain.*
 import moneystack.portfolio.service.*
-import moneystack.platform.HttpSupport
+import moneystack.platform.{Auth, HttpSupport}
 
 import cats.effect.*
 import cats.syntax.all.*
@@ -17,7 +17,7 @@ import org.http4s.circe.CirceEntityCodec.*
  * shared catalogue.
  */
 final class PortfolioRoutes[F[_]: Async](
-    auth: Request[F] => F[Option[UserId]],
+    auth: Auth[F],
     defaultCurrency: CurrencyCode,
     portfolio: PortfolioService[F],
     planning: PlanningService[F],

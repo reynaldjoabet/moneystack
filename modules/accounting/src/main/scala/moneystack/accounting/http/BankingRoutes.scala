@@ -1,6 +1,6 @@
 package moneystack.accounting.http
 
-import moneystack.domain.*
+import moneystack.platform.Auth
 import moneystack.accounting.service.BankingService
 
 import cats.effect.*
@@ -9,7 +9,7 @@ import org.http4s.*
 import org.http4s.circe.CirceEntityCodec.*
 
 /** Bank rules and the bank feed. */
-final class BankingRoutes[F[_]: Async](auth: Request[F] => F[Option[UserId]], banking: BankingService[F])
+final class BankingRoutes[F[_]: Async](auth: Auth[F], banking: BankingService[F])
     extends RouteSupport[F](auth) {
 
   import AccountingJson.given

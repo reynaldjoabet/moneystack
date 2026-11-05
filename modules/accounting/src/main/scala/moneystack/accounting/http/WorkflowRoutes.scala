@@ -1,6 +1,6 @@
 package moneystack.accounting.http
 
-import moneystack.domain.*
+import moneystack.platform.Auth
 import moneystack.accounting.domain.*
 import moneystack.accounting.service.{CashService, TradeService, WorkflowService}
 
@@ -10,7 +10,7 @@ import org.http4s.*
 import org.http4s.circe.CirceEntityCodec.*
 
 /** Drafts, document history, recurring documents, direct income/expense, transfers and reconciliation. */
-final class WorkflowRoutes[F[_]: Async](auth: Request[F] => F[Option[UserId]], workflow: WorkflowService[F], cash: CashService[F])
+final class WorkflowRoutes[F[_]: Async](auth: Auth[F], workflow: WorkflowService[F], cash: CashService[F])
     extends RouteSupport[F](auth) {
 
   import AccountingJson.given

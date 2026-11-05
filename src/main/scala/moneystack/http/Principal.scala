@@ -1,26 +1,42 @@
 package moneystack.http
 
+import moneystack.auth.Tokens
 import moneystack.domain.*
 import moneystack.db.Users
+import moneystack.platform.{Auth, AuthFailure}
 
 import cats.effect.*
 import cats.syntax.all.*
-import org.http4s.Request
+import org.http4s.{AuthScheme, Credentials, Request}
+import org.http4s.headers.Authorization
 
-import java.util.UUID
+/**
+ * Resolves the caller from an `Authorization: Bearer <token>` header. The user is looked up on every
+ * request, so a deleted user or a changed role takes effect at once rather than when the token expires.
+ */
+final class Principal[F[_]: Sync](tokens: Tokens[F], users: Users[F]) {
 
-/** Resolves the `X-User-Id` principal (set upstream by the JWT middleware), as in [[Routes]]. */
+  /** The signed-in user, or `Unauthenticated` without a valid token for a user who still exists. */
+  def user(req: Request[F]): F[Either[AuthFailure, User]] =
+    Principal.bearer(req) match {
+      case None        => Sync[F].pure(Left(AuthFailure.Unauthenticated))
+      case Some(token) =>
+        tokens.verify(token).flatMap {
+          case None      => Sync[F].pure(Left(AuthFailure.Unauthenticated))
+          case Some(uid) => users.find(uid).map(_.toRight(AuthFailure.Unauthenticated))
+        }
+    }
+
+  /** Callers who hold `role`. */
+  def withRole(role: Role): Auth[F] =
+    req => user(req).map(_.flatMap(u => if (u.role == role) Right(u.id) else Left(AuthFailure.Forbidden)))
+
+  /** Any signed-in caller, whatever their role (personal finance features). */
+  val known: Auth[F] = req => user(req).map(_.map(_.id))
+}
+
 object Principal {
 
-  def userId[F[_]](req: Request[F]): Option[UserId] =
-    req.headers.get(org.typelevel.ci.CIString("X-User-Id"))
-      .flatMap(h => scala.util.Try(UUID.fromString(h.head.value)).toOption.map(UserId.assume))
-
-  /** The caller's id when they hold `role`. */
-  def withRole[F[_]: Sync](users: Users[F], role: Role)(req: Request[F]): F[Option[UserId]] =
-    userId(req).flatTraverse(uid => users.find(uid).map(_.filter(_.role == role).map(_.id)))
-
-  /** The caller's id when they are a known user, whatever their role (personal finance features). */
-  def known[F[_]: Sync](users: Users[F])(req: Request[F]): F[Option[UserId]] =
-    userId(req).flatTraverse(uid => users.find(uid).map(_.map(_.id)))
+  def bearer[F[_]](req: Request[F]): Option[String] =
+    req.headers.get[Authorization].collect { case Authorization(Credentials.Token(AuthScheme.Bearer, token)) => token }
 }

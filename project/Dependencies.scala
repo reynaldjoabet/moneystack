@@ -15,6 +15,11 @@ object Dependencies {
     val flyway         = "13.11.1"
     val postgresJdbc   = "42.7.14"
     val ciris          = "3.15.2"
+    val jwt            = "12.0.0"
+    val otel4s         = "1.1.0"
+    val otel4sHttp4s   = "0.19.0"
+    // Matches the OpenTelemetry Java SDK that otel4s-oteljava is built against.
+    val otelJava = "1.64.0"
   }
 
 }

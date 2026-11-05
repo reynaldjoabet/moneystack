@@ -1,27 +1,30 @@
 package moneystack.http
 
+import moneystack.auth.{Passwords, Tokens}
 import moneystack.domain.*
 import moneystack.db.*
 import moneystack.service.*
 import moneystack.external.MarketData
+import moneystack.platform.{AuthFailure, HttpSupport}
 
 import cats.effect.*
 import cats.syntax.all.*
-import com.github.t3hnar.bcrypt.*
 import io.circe.syntax.*
 import org.http4s.*
 import org.http4s.circe.CirceEntityCodec.*
 import org.http4s.dsl.Http4sDsl
+import skunk.SqlState
 
-import java.time.{Instant, LocalDate}
+import java.time.{Instant, LocalDate, ZoneOffset}
 import java.util.UUID
 
 /**
- * Role-aware routes. The header `X-User-Id` is the trusted principal (in
- * production this is set by a JWT-validating middleware upstream). Each route
- * that mutates portfolio state also re-checks the user's role.
+ * Role-aware routes. The caller is the user named by the bearer token (see [[Principal]]);
+ * signup and login are the only routes that issue one. Portfolios are visible to their owner only.
  */
 final class Routes[F[_]: Async](
+    principal: Principal[F],
+    tokens: Tokens[F],
     users: Users[F],
     portfolios: Portfolios[F],
     holdings: Holdings[F],
@@ -35,12 +38,6 @@ final class Routes[F[_]: Async](
 
   import Json.given
 
-  private object UserHeader {
-    def unapply(req: Request[F]): Option[UserId] =
-      req.headers.get(org.typelevel.ci.CIString("X-User-Id"))
-        .flatMap(h => scala.util.Try(UUID.fromString(h.head.value)).toOption.map(UserId.assume))
-  }
-
   private object PortfolioIdVar {
     def unapply(s: String): Option[PortfolioId] =
       scala.util.Try(UUID.fromString(s)).toOption.map(PortfolioId.assume)
@@ -51,15 +48,33 @@ final class Routes[F[_]: Async](
       scala.util.Try(UUID.fromString(s)).toOption.map(ModelPortfolioId.assume)
   }
 
+  private object UserIdVar {
+    def unapply(s: String): Option[UserId] =
+      scala.util.Try(UUID.fromString(s)).toOption.map(UserId.assume)
+  }
+
+  /** The caller when they hold `role`; otherwise the 401 or 403 to answer with. */
   private def requireRole(req: Request[F], role: Role): F[Either[Response[F], User]] =
-    UserHeader.unapply(req) match {
-      case None      => Forbidden().map(Left(_))
-      case Some(uid) =>
-        users.find(uid).flatMap {
-          case Some(u) if u.role == role => Async[F].pure(Right(u))
-          case _                         => Forbidden().map(Left(_))
-        }
+    principal.user(req).flatMap {
+      case Right(u) if u.role == role        => Async[F].pure(Right(u))
+      case Right(_)                          => forbidden.map(Left(_))
+      case Left(AuthFailure.Forbidden)       => forbidden.map(Left(_))
+      case Left(AuthFailure.Unauthenticated) => HttpSupport.unauthorized[F].map(Left(_))
     }
+
+  private def forbidden: F[Response[F]] = Forbidden(Map("error" -> "forbidden").asJson)
+
+  /** Runs `f` on the caller's own portfolio. Someone else's answers 404, as if it did not exist. */
+  private def ownPortfolio(owner: User, pid: PortfolioId)(f: Portfolio => F[Response[F]]): F[Response[F]] =
+    portfolios.find(pid).flatMap {
+      case Some(p) if p.userId == owner.id => f(p)
+      case _                               => NotFound(Map("error" -> "portfolio not found").asJson)
+    }
+
+  private def session(u: User): F[Json.AuthSession] =
+    tokens.issue(u.id).map(t => Json.AuthSession(t.token, t.expiresAt, u))
+
+  private val emailTaken: F[Response[F]] = Conflict(Map("error" -> "email already registered").asJson)
 
   val routes: HttpRoutes[F] = HttpRoutes.of[F] {
 
@@ -67,30 +82,53 @@ final class Routes[F[_]: Async](
 
     case req @ POST -> Root / "auth" / "signup" =>
       req.as[Json.SignupBody].flatMap { b =>
-        for {
-          hash <- Async[F].delay(b.password.bcryptBounded(12))
-          now  <- Async[F].delay(Instant.now())
-          u = User(
-            id = UserId.assume(UUID.randomUUID()),
-            email = b.email,
-            passwordHash = PasswordHash.assume(hash),
-            displayName = b.displayName,
-            role = b.role,
-            locale = b.locale,
-            telegramChatId = None,
-            createdAt = now
-          )
-          saved <- users.create(u)
-          resp  <- Created(Json.userEncoder(saved))
-        } yield resp
+        Passwords.validate(b.password) match {
+          case Left(err) => BadRequest(Map("error" -> err).asJson)
+          case Right(pw) =>
+            users.findByEmail(b.email).flatMap {
+              case Some(_) => emailTaken
+              case None    =>
+                for {
+                  hash <- Passwords.hash[F](pw)
+                  now  <- Async[F].realTimeInstant
+                  u = User(
+                    id = UserId.assume(UUID.randomUUID()),
+                    email = b.email,
+                    passwordHash = hash,
+                    displayName = b.displayName,
+                    role = Role.Investor,
+                    locale = b.locale,
+                    telegramChatId = None,
+                    createdAt = now
+                  )
+                  resp <- users.create(u)
+                    .flatMap(saved => session(saved).flatMap(Created(_)))
+                    // Two signups for one email can both pass the lookup; the unique index decides.
+                    .recoverWith { case SqlState.UniqueViolation(_) => emailTaken }
+                } yield resp
+            }
+        }
       }
 
     case req @ POST -> Root / "auth" / "login" =>
       req.as[Json.LoginBody].flatMap { b =>
-        users.findByEmail(b.email).flatMap {
-          case Some(u) if b.password.isBcryptedBounded(u.passwordHash.value) => Ok(Json.userEncoder(u))
-          case _                                                             => Forbidden(Map("error" -> "invalid").asJson)
-        }
+        for {
+          found <- users.findByEmail(b.email)
+          ok    <- Passwords.verify[F](b.password, found.map(_.passwordHash))
+          resp  <- found.filter(_ => ok) match {
+            case Some(u) => session(u).flatMap(Ok(_))
+            case None    => Unauthorized(
+                headers.`WWW-Authenticate`(Challenge("Bearer", "moneystack")),
+                Map("error" -> "invalid email or password").asJson
+              )
+          }
+        } yield resp
+      }
+
+    case req @ GET -> Root / "auth" / "me" =>
+      principal.user(req).flatMap {
+        case Right(u) => Ok(Json.userEncoder(u))
+        case Left(_)  => HttpSupport.unauthorized[F]
       }
 
     // ---- investor: portfolios + holdings + valuations ----
@@ -118,35 +156,32 @@ final class Routes[F[_]: Async](
     case req @ POST -> Root / "investor" / "portfolios" / PortfolioIdVar(pid) / "holdings" =>
       requireRole(req, Role.Investor).flatMap {
         case Left(r)  => Async[F].pure(r)
-        case Right(_) =>
-          req.as[Json.UpsertHoldingBody].flatMap { b =>
-            for {
-              now <- Async[F].delay(Instant.now())
-              h = Holding(HoldingId.assume(UUID.randomUUID()), pid, b.ticker, b.exchange, b.quantity, b.avgCostUnit, now)
-              s <- holdings.upsert(h)
-              r <- Created(s)
-            } yield r
+        case Right(u) =>
+          ownPortfolio(u, pid) { _ =>
+            req.as[Json.UpsertHoldingBody].flatMap { b =>
+              for {
+                now <- Async[F].delay(Instant.now())
+                h = Holding(HoldingId.assume(UUID.randomUUID()), pid, b.ticker, b.exchange, b.quantity, b.avgCostUnit, now)
+                s <- holdings.upsert(h)
+                r <- Created(s)
+              } yield r
+            }
           }
       }
 
     case req @ GET -> Root / "investor" / "portfolios" / PortfolioIdVar(pid) / "valuation" =>
       requireRole(req, Role.Investor).flatMap {
         case Left(r)  => Async[F].pure(r)
-        case Right(_) =>
-          portfolios.find(pid).flatMap {
-            case Some(p) => portfolioSvc.value(p).flatMap(Ok(_))
-            case None    => NotFound()
-          }
+        case Right(u) => ownPortfolio(u, pid)(p => portfolioSvc.value(p).flatMap(Ok(_)))
       }
 
     case req @ GET -> Root / "investor" / "portfolios" / PortfolioIdVar(pid) / "performance" =>
       requireRole(req, Role.Investor).flatMap {
         case Left(r)  => Async[F].pure(r)
-        case Right(_) =>
-          portfolios.find(pid).flatMap {
-            case Some(p) => portfolioSvc.performance(p, LocalDate.now()).flatMap(Ok(_))
-            case None    => NotFound()
-          }
+        case Right(u) =>
+          ownPortfolio(u, pid)(p =>
+            Async[F].delay(LocalDate.now(ZoneOffset.UTC)).flatMap(today => portfolioSvc.performance(p, today)).flatMap(Ok(_))
+          )
       }
 
     // ---- investor: subscription ----
@@ -239,13 +274,24 @@ final class Routes[F[_]: Async](
           }
       }
 
+    // ---- admin: roles (the first admin is promoted in SQL, see the README) ----
+
+    case req @ PUT -> Root / "admin" / "users" / UserIdVar(uid) / "role" =>
+      requireRole(req, Role.Admin).flatMap {
+        case Left(r)  => Async[F].pure(r)
+        case Right(_) =>
+          req.as[Json.SetRoleBody].flatMap(b =>
+            users.setRole(uid, b.role).flatMap(_.fold(NotFound(Map("error" -> "user not found").asJson))(u => Ok(Json.userEncoder(u))))
+          )
+      }
+
     // ---- accountant: payment list ----
 
     case req @ GET -> Root / "accountant" / "users" / userSeg / "payments" =>
       requireRole(req, Role.Accountant).flatMap {
         case Left(r)  => Async[F].pure(r)
         case Right(_) =>
-          scala.util.Try(UUID.fromString(userSeg)).toOption.map(UserId.assume) match {
+          UserIdVar.unapply(userSeg) match {
             case None      => BadRequest()
             case Some(uid) => subscriptions.listPaymentsFor(uid, 200).flatMap(Ok(_))
           }

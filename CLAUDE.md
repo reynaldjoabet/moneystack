@@ -57,6 +57,13 @@ Single suite: `sbt --client "accounting/Integration/testOnly *LedgerIntegrationS
   Fix mistakes with a new version.
 - Keep `V1` scripts idempotent: databases created before Flyway adopt them by re-running V1.
 
+## Auth
+
+Callers are identified only by the bearer token (`moneystack.auth.Tokens`, resolved by `http.Principal`),
+never by a header or body field they choose. Module routes take a `platform.Auth[F]` and use
+`HttpSupport.authed` (401 without a valid token, 403 for the wrong role). Anything owned by a user is
+looked up together with the caller's id, and someone else's answers 404.
+
 ## Configuration
 
 `AppConfig` reads environment variables with ciris and reports every problem at once. Name boolean

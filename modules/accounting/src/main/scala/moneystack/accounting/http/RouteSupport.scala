@@ -2,7 +2,7 @@ package moneystack.accounting.http
 
 import moneystack.domain.*
 import moneystack.accounting.domain.*
-import moneystack.platform.HttpSupport
+import moneystack.platform.{Auth, HttpSupport}
 
 import cats.effect.*
 import org.http4s.*
@@ -12,7 +12,7 @@ import org.http4s.circe.CirceEntityCodec.*
  * Shared plumbing for the accounting routes. `auth` resolves the caller to an
  * accountant's user id, or `None` to refuse; the host app decides who that is.
  */
-abstract class RouteSupport[F[_]: Async](auth: Request[F] => F[Option[UserId]]) extends HttpSupport[F, LedgerError](auth) {
+abstract class RouteSupport[F[_]: Async](auth: Auth[F]) extends HttpSupport[F, LedgerError](auth) {
 
   protected val AccountIdVar    = new UuidVar(AccountId.assume)
   protected val EntryIdVar      = new UuidVar(JournalEntryId.assume)

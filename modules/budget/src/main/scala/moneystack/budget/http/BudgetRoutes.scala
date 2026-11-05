@@ -3,7 +3,7 @@ package moneystack.budget.http
 import moneystack.domain.*
 import moneystack.budget.domain.*
 import moneystack.budget.service.*
-import moneystack.platform.{FxQuote, HttpSupport}
+import moneystack.platform.{Auth, FxQuote, HttpSupport}
 
 import cats.data.ValidatedNel
 import cats.effect.*
@@ -17,7 +17,7 @@ import java.time.{LocalDate, YearMonth}
 
 /** The caller's budget under `/budget`; shared wallets are readable but only their owners write. */
 final class BudgetRoutes[F[_]: Async](
-    auth: Request[F] => F[Option[UserId]],
+    auth: Auth[F],
     defaultCurrency: CurrencyCode,
     money: MoneyService[F],
     plans: PlanService[F],

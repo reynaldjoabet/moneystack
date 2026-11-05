@@ -68,8 +68,23 @@ object Json {
   given Encoder[PortfolioService.Valuation]     = deriveEncoder
 
   // ---- request bodies ----
-  final case class SignupBody(email: Email, password: String, displayName: DisplayName, role: Role, locale: Locale)
+  /** No `role`: every account starts as an investor, and only an admin can change that. */
+  final case class SignupBody(email: Email, password: String, displayName: DisplayName, locale: Locale)
   given Decoder[SignupBody] = deriveDecoder
+
+  final case class SetRoleBody(role: Role)
+  given Decoder[SetRoleBody] = deriveDecoder
+
+  /** What signup and login answer with: a bearer token for the `Authorization` header, and who it is for. */
+  final case class AuthSession(token: String, expiresAt: java.time.Instant, user: User)
+  given Encoder[AuthSession] = Encoder.instance(s =>
+    io.circe.Json.obj(
+      "token"     -> Encoder.encodeString(s.token),
+      "tokenType" -> Encoder.encodeString("Bearer"),
+      "expiresAt" -> Encoder[java.time.Instant].apply(s.expiresAt),
+      "user"      -> Encoder[User].apply(s.user)
+    )
+  )
 
   final case class LoginBody(email: Email, password: String)
   given Decoder[LoginBody] = deriveDecoder

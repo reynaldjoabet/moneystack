@@ -4,11 +4,11 @@ import moneystack.domain.*
 import moneystack.accounting.db.*
 import moneystack.accounting.http.{BankingRoutes, LedgerRoutes, TradeRoutes, WorkflowRoutes}
 import moneystack.accounting.service.*
-import moneystack.platform.Db
+import moneystack.platform.{Auth, Db}
 
 import cats.effect.*
 import cats.syntax.all.*
-import org.http4s.{HttpRoutes, Request}
+import org.http4s.HttpRoutes
 import skunk.Session
 
 /** The accounting module's services, wired over one session pool. */
@@ -25,7 +25,7 @@ final class AccountingModule[F[_]: Async] private (
   def bootstrap: F[Unit] = ledger.bootstrap
 
   /** All accountant routes; `auth` returns the caller's user id when they may use them. */
-  def routes(auth: Request[F] => F[Option[UserId]]): HttpRoutes[F] =
+  def routes(auth: Auth[F]): HttpRoutes[F] =
     new LedgerRoutes[F](auth, ledger).routes <+>
       new TradeRoutes[F](auth, catalog, trade).routes <+>
       new BankingRoutes[F](auth, banking).routes <+>

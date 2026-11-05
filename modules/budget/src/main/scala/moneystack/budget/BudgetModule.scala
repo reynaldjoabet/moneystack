@@ -4,10 +4,10 @@ import moneystack.domain.*
 import moneystack.budget.db.*
 import moneystack.budget.http.BudgetRoutes
 import moneystack.budget.service.*
-import moneystack.platform.Db
+import moneystack.platform.{Auth, Db}
 
 import cats.effect.*
-import org.http4s.{HttpRoutes, Request}
+import org.http4s.HttpRoutes
 import skunk.Session
 
 /** The budget module's services, wired over one session pool. */
@@ -19,7 +19,7 @@ final class BudgetModule[F[_]: Async] private (
 ) {
 
   /** Routes under `/budget`, acting as the user `auth` returns. */
-  def routes(auth: Request[F] => F[Option[UserId]]): HttpRoutes[F] =
+  def routes(auth: Auth[F]): HttpRoutes[F] =
     new BudgetRoutes[F](auth, defaultCurrency, money, plans, insights).routes
 }
 

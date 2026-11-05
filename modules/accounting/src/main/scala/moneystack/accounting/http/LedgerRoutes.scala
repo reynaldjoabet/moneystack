@@ -1,6 +1,7 @@
 package moneystack.accounting.http
 
 import moneystack.domain.*
+import moneystack.platform.Auth
 import moneystack.accounting.domain.*
 import moneystack.accounting.service.LedgerService
 
@@ -12,7 +13,7 @@ import org.http4s.circe.CirceEntityCodec.*
 import java.time.Instant
 
 /** Chart of accounts, journal, exchange rates, period lock, and the core statements. */
-final class LedgerRoutes[F[_]: Async](auth: Request[F] => F[Option[UserId]], ledger: LedgerService[F])
+final class LedgerRoutes[F[_]: Async](auth: Auth[F], ledger: LedgerService[F])
     extends RouteSupport[F](auth) {
 
   import AccountingJson.given

@@ -1,6 +1,6 @@
 package moneystack.accounting.http
 
-import moneystack.domain.*
+import moneystack.platform.Auth
 import moneystack.accounting.domain.*
 import moneystack.accounting.service.{CatalogService, TradeService}
 
@@ -14,7 +14,7 @@ import org.http4s.circe.CirceEntityCodec.*
  * adjustments, and the sub-ledger reports.
  */
 final class TradeRoutes[F[_]: Async](
-    auth: Request[F] => F[Option[UserId]],
+    auth: Auth[F],
     catalog: CatalogService[F],
     trade: TradeService[F]
 ) extends RouteSupport[F](auth) {

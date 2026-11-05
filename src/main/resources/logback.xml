@@ -1,12 +1,15 @@
 <configuration>
-    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
-        <encoder>
-            <pattern>%d{HH:mm:ss.SSS} %-5level %logger{30} - %msg%n</pattern>
-        </encoder>
-    </appender>
+    <!--
+      LOG_FORMAT picks the console format: `text` (default) for people, `json` (one object per line) for log
+      collectors; each lives in logback-<format>.xml. LOG_LEVEL sets the root level (default INFO).
+    -->
+    <include resource="logback-${LOG_FORMAT:-text}.xml"/>
+
+    <!-- Flyway prints a line per migration at INFO; keep only its warnings. -->
+    <logger name="org.flywaydb" level="WARN"/>
     <logger name="skunk" level="INFO"/>
     <logger name="org.http4s" level="INFO"/>
-    <root level="INFO">
-        <appender-ref ref="STDOUT"/>
+    <root level="${LOG_LEVEL:-INFO}">
+        <appender-ref ref="console"/>
     </root>
 </configuration>

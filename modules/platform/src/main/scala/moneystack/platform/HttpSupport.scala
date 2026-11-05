@@ -3,6 +3,7 @@ package moneystack.platform
 import moneystack.domain.*
 
 import cats.data.ValidatedNel
+import cats.Applicative
 import cats.effect.*
 import cats.syntax.all.*
 import io.circe.{Codec as JsonCodec, Decoder, Encoder}
@@ -16,10 +17,10 @@ import java.util.UUID
 
 /**
  * Route plumbing shared by every module. `auth` resolves the caller to a user
- * id, or `None` to refuse; the host app decides what qualifies. `E` is the
+ * id, or says why it is refused; the host app decides what qualifies. `E` is the
  * module's domain error, mapped to a status by [[failed]].
  */
-abstract class HttpSupport[F[_]: Async, E](auth: Request[F] => F[Option[UserId]]) extends Http4sDsl[F] {
+abstract class HttpSupport[F[_]: Async, E](auth: Auth[F]) extends Http4sDsl[F] {
 
   final class UuidVar[A](wrap: UUID => A) {
     def unapply(s: String): Option[A] = scala.util.Try(UUID.fromString(s)).toOption.map(wrap)
@@ -43,9 +44,13 @@ abstract class HttpSupport[F[_]: Async, E](auth: Request[F] => F[Option[UserId]]
   protected object To    extends OptionalValidatingQueryParamDecoderMatcher[LocalDate]("to")
   protected object Limit extends OptionalQueryParamDecoderMatcher[Int]("limit")
 
-  /** Runs `f` for an authorised caller, 403 otherwise. */
+  /** Runs `f` for an authorised caller; 401 without valid credentials, 403 for a caller who may not. */
   protected def authed(req: Request[F])(f: UserId => F[Response[F]]): F[Response[F]] =
-    auth(req).flatMap(_.fold(Forbidden())(f))
+    auth(req).flatMap {
+      case Right(user)                       => f(user)
+      case Left(AuthFailure.Unauthenticated) => HttpSupport.unauthorized[F]
+      case Left(AuthFailure.Forbidden)       => Forbidden(Map("error" -> "forbidden").asJson)
+    }
 
   protected def param[A](p: Option[ValidatedNel[ParseFailure, A]], default: => A): Either[String, A] =
     p.fold(Right(default))(_.toEither.leftMap(_.head.sanitized))
@@ -85,6 +90,17 @@ abstract class HttpSupport[F[_]: Async, E](auth: Request[F] => F[Option[UserId]]
   protected def errorBody(err: E): io.circe.Json = Map("error" -> err.toString).asJson
 
   def routes: HttpRoutes[F]
+}
+
+object HttpSupport {
+
+  /** 401 with the `WWW-Authenticate` challenge RFC 9110 requires. */
+  def unauthorized[F[_]: Applicative]: F[Response[F]] =
+    Applicative[F].pure(
+      Response[F](Status.Unauthorized)
+        .withEntity(Map("error" -> "unauthenticated").asJson)
+        .putHeaders(headers.`WWW-Authenticate`(Challenge("Bearer", "moneystack")))
+    )
 }
 
 object JsonSupport {

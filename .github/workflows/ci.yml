@@ -84,6 +84,10 @@ jobs:
       - name: Compile and test
         run: sbt -v "Test/compile; test; Integration/test"
 
+      # Builds the image the way a release would, so a packaging break fails here rather than at deploy.
+      - name: Build image
+        run: sbt -v Docker/publishLocal
+
   coverage:
     name: Coverage
     needs: lint
