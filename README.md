@@ -120,6 +120,10 @@ Everything else is shared, in [deploy/base/](deploy/base/). Before applying:
    limit. On Envoy, set `clientIPDetection` or PROXY protocol in a `ClientTrafficPolicy` on the Gateway. On
    HAProxy, see `deploy/haproxy/platform/values.yaml`.
 
+`scripts/certs.sh` creates a private CA, signs server certificates and builds that trust store; run it with
+no arguments for usage. Keys go to `certs/`, which git ignores. Browsers don't trust this CA, so use it for
+internal connections such as Postgres, and a public CA for `money.example.com`.
+
 The database role must be able to run the migrations, or use `DB_MIGRATE_ON_START=false` and run them separately.
 Each Pod needs 1 GiB of memory and opens up to `DB_POOL_MAX` Postgres connections: 8 per Pod by default.
 

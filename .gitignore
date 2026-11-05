@@ -35,3 +35,5 @@ web/.DS_Store
 .scala-build/
 
 .mcp.json
+# Private keys from scripts/certs.sh
+/certs/
