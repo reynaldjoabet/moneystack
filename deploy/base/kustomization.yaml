@@ -1,0 +1,19 @@
+# Everything except the routing. Pick a gateway: `kubectl apply -k deploy` for Envoy Gateway, or
+# `kubectl apply -k deploy/haproxy` for HAProxy Unified Gateway. See "Deploying to Kubernetes" in ../../README.md.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: moneystack
+resources:
+  - namespace.yaml
+  - serviceaccount.yaml
+  - deployment.yaml
+  - service.yaml
+  - poddisruptionbudget.yaml
+  - networkpolicy.yaml
+
+# Set this to the image you pushed. The tag should change with every build (a git SHA or a digest):
+# with the default pull policy, nodes won't fetch a new image pushed under a tag they already have.
+images:
+  - name: moneystack
+    newName: registry.example.com/moneystack
+    newTag: 0.1.0

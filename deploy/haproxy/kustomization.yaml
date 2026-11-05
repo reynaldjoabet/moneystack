@@ -1,0 +1,23 @@
+# moneystack behind HAProxy Unified Gateway, instead of the Envoy Gateway setup in ../. Use one, not both.
+#
+# First install the gateway itself, once per cluster: see platform/gateway.yaml. Then:
+#
+#   kubectl create namespace moneystack
+#   kubectl create secret generic moneystack -n moneystack \
+#     --from-literal=db-password=... --from-literal=jwt-secret="$(openssl rand -base64 48)"
+#   kubectl apply -k deploy/haproxy
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../base
+  - httproute.yaml
+  - ratelimit.yaml
+patches:
+  # Traffic comes from HAProxy's namespace, not Envoy's.
+  - target:
+      kind: NetworkPolicy
+      name: moneystack
+    patch: |-
+      - op: replace
+        path: /spec/ingress/0/from/0/namespaceSelector/matchLabels/kubernetes.io~1metadata.name
+        value: haproxy-unified-gateway

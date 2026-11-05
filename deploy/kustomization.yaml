@@ -1,24 +1,12 @@
-# moneystack behind the shared Gateway. See "Deploying to Kubernetes" in ../README.md.
+# moneystack behind the shared Envoy Gateway. deploy/haproxy is the same app on HAProxy instead: use one.
 #
+#   kubectl create namespace moneystack
 #   kubectl create secret generic moneystack -n moneystack \
 #     --from-literal=db-password=... --from-literal=jwt-secret="$(openssl rand -base64 48)"
 #   kubectl apply -k deploy
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-namespace: moneystack
 resources:
-  - namespace.yaml
-  - serviceaccount.yaml
-  - deployment.yaml
-  - service.yaml
-  - poddisruptionbudget.yaml
-  - networkpolicy.yaml
+  - base
   - httproute.yaml
   - ratelimit.yaml
-
-# Set this to the image you pushed. The tag should change with every build (a git SHA or a digest):
-# with the default pull policy, nodes won't fetch a new image pushed under a tag they already have.
-images:
-  - name: moneystack
-    newName: registry.example.com/moneystack
-    newTag: 0.1.0

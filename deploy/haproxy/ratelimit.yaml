@@ -1,0 +1,26 @@
+# The only limit on password guessing: the app doesn't count login attempts. Clients over it get 429.
+#
+# Each client IP gets 10 requests a minute across the moneystack-auth route, and stays blocked while it
+# keeps retrying, because refused requests count too. This is a HAProxy stick table, which needs no Redis,
+# but each HAProxy Pod counts separately, so the effective limit is 10 times the replicas.
+#
+# It only works if HAProxy sees real client addresses: see platform/values.yaml.
+apiVersion: gate.v3.haproxy.org/v3
+kind: Backend
+metadata:
+  name: moneystack-auth-ratelimit
+  namespace: moneystack
+spec:
+  stick_table:
+    type: ipv6 # also holds IPv4 addresses
+    size: 100000
+    expire: 120000 # milliseconds; longer than the rate period
+    store: http_req_rate(1m)
+  http_request_rule_list:
+    - type: track-sc
+      track_sc_stick_counter: 0
+      track_sc_key: src
+    - type: deny
+      deny_status: 429
+      cond: if
+      cond_test: "{ sc_http_req_rate(0) gt 10 }"

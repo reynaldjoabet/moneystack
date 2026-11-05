@@ -1,0 +1,68 @@
+# The platform team's part: HAProxy Unified Gateway and one shared Gateway. Installed once per cluster:
+#
+#   helm repo add haproxytech https://haproxytech.github.io/helm-charts
+#   helm upgrade --install haproxy-unified-gateway haproxytech/haproxy-unified-gateway --version 1.2.3 \
+#     --namespace haproxy-unified-gateway --create-namespace -f deploy/haproxy/platform/values.yaml
+#   kubectl apply -f deploy/haproxy/platform/gateway.yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: infra
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: haproxy
+spec:
+  controllerName: gate.haproxy.org/hug
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: haproxy
+  namespace: infra
+spec:
+  gatewayClassName: haproxy
+  listeners:
+    # Plain HTTP, only so the redirect below can send everyone to HTTPS.
+    - name: http
+      protocol: HTTP
+      port: 80
+      hostname: "*.example.com"
+      allowedRoutes:
+        namespaces:
+          from: Selector
+          selector:
+            matchLabels:
+              gateway-access: public
+    - name: https
+      protocol: HTTPS
+      port: 443
+      hostname: "*.example.com"
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - kind: Secret
+            name: wildcard-example-com # e.g. issued by cert-manager, kept in this namespace
+      allowedRoutes:
+        namespaces:
+          from: Selector
+          selector:
+            matchLabels:
+              gateway-access: public
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: to-https
+  namespace: infra
+spec:
+  parentRefs:
+    - name: haproxy
+      sectionName: http
+  rules:
+    - filters:
+        - type: RequestRedirect
+          requestRedirect:
+            scheme: https
+            statusCode: 301

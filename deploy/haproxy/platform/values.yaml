@@ -1,0 +1,23 @@
+# Helm values for HAProxy Unified Gateway: the platform's part, installed once per cluster.
+# See gateway.yaml for the install command.
+controller:
+  replicaCount: 3
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: topology.kubernetes.io/zone
+      whenUnsatisfiable: ScheduleAnyway
+      labelSelector:
+        matchLabels:
+          app.kubernetes.io/name: haproxy-unified-gateway
+  podDisruptionBudget:
+    enabled: true
+    maxUnavailable: 1
+  service:
+    type: LoadBalancer
+    # Keeps the client's address on traffic that reaches a node directly, and skips the second hop.
+    externalTrafficPolicy: Local
+  # Client addresses. The rate limit counts per address, so if the load balancer connects with its own
+  # address (most HTTP or proxying LBs), every user shares one limit. Then turn on the PROXY protocol on the
+  # LB and uncomment this. Every connection must then carry the header: others are rejected.
+  # extraArgs:
+  #   - --accept-proxy

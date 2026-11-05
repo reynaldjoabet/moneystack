@@ -1,4 +1,4 @@
-# Only Envoy may call the app, and the app may only reach DNS and Postgres. Needs a CNI that enforces
+# Only the gateway may call the app (Envoy here; deploy/haproxy changes the namespace), and the app may only reach DNS and Postgres. Needs a CNI that enforces
 # NetworkPolicy; without one this is silently ignored. Kubelet probes come from the node and are allowed.
 #
 # With TELEMETRY_ENABLED=true, add an egress rule for the OTLP collector. A real payment, CRM or market
