@@ -101,8 +101,8 @@ cause carries it too.
 - Replicas that start together are safe: Flyway holds a Postgres advisory lock, so one of them migrates and
   the others wait. For long migrations, run the app once as a job, then deploy with `DB_MIGRATE_ON_START=false`.
 - The image applies Ubuntu's security updates on top of the Temurin base when it is built, and CI fails
-  on any fixable high or critical vulnerability in it (Trivy). Dependabot keeps the Actions and compose
-  images current; for Scala dependencies run `sbt --client dependencyUpdates`.
+  on any fixable high or critical vulnerability in it (Trivy). Dependabot opens weekly PRs for the Scala
+  dependencies, the Actions and the compose images; Scala itself stays on the LTS line and is bumped by hand.
 - The JVM sizes its heap to 75% of the container's memory limit and exits on `OutOfMemoryError`, so the
   orchestrator restarts it.
 
@@ -146,5 +146,8 @@ sbt --client lint              # scalafmt + scalafix checks, as CI runs them
 sbt --client fmt               # fix formatting and unused code
 sbt --client cov               # coverage report
 ```
+
+Compiler warnings fail the build in CI (`-Werror` when `CI=true`), not locally. `git blame` skips formatting-only
+commits listed in `.git-blame-ignore-revs`; run `git config blame.ignoreRevsFile .git-blame-ignore-revs` once.
 
 See [CLAUDE.md](CLAUDE.md) for module layout and conventions.

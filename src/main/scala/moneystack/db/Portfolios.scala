@@ -18,6 +18,9 @@ trait Portfolios[F[_]] {
   def createPortfolio(p: Portfolio): F[Portfolio]
   def listFor(userId: UserId): F[List[Portfolio]]
   def find(id: PortfolioId): F[Option[Portfolio]]
+
+  /** Each investor with a portfolio backed by `model`, once, with their Telegram chat if they linked one. */
+  def followers(model: ModelPortfolioId): F[List[(UserId, Option[TelegramChatId])]]
 }
 
 object Portfolios {
@@ -65,6 +68,9 @@ object Portfolios {
 
       def find(id: PortfolioId): F[Option[Portfolio]] =
         pool.use(_.prepare(Q.byId).flatMap(_.option(id)))
+
+      def followers(model: ModelPortfolioId): F[List[(UserId, Option[TelegramChatId])]] =
+        pool.use(_.prepare(Q.followers).flatMap(_.stream(model, 256).compile.toList))
     }
 
   private object Q {
@@ -101,6 +107,10 @@ object Portfolios {
       sql"""SELECT model_portfolio_id, ticker, exchange, weight_bps
             FROM model_allocations WHERE model_portfolio_id = $modelIdC
             ORDER BY weight_bps DESC""".query(allocC)
+
+    val followers: Query[ModelPortfolioId, (UserId, Option[TelegramChatId])] =
+      sql"""SELECT DISTINCT u.id, u.telegram_chat_id FROM portfolios p JOIN users u ON u.id = p.user_id
+            WHERE p.backed_by = $modelIdC""".query(Codecs.userId *: Codecs.telegramChat.opt)
 
     val listModels: Query[skunk.Void, ModelPortfolio] =
       sql"""SELECT id, name, strategy, created_by, created_at, updated_at, description

@@ -37,3 +37,6 @@ web/.DS_Store
 .mcp.json
 # Private keys from scripts/certs.sh
 /certs/
+
+# SemanticDB for the build definition, written on reload when semanticdbEnabled is set globally
+/*.sbt.semanticdb

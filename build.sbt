@@ -30,6 +30,8 @@ lazy val commonSettings = Seq(
     "-Xmax-inlines",
     "64"
   ),
+  // Warnings fail CI (GitHub Actions sets CI=true) but not a local build, so work in progress still compiles.
+  scalacOptions ++= (if (sys.env.get("CI").contains("true")) Seq("-Werror") else Nil),
   // sbt 2 writes SemanticDB to a separate `meta/` directory, but sbt-scalafix only reads `classDirectory`.
   Compile / semanticdbTargetRoot := (Compile / classDirectory).value,
   Test / semanticdbTargetRoot    := (Test / classDirectory).value

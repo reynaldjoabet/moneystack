@@ -40,7 +40,7 @@ Single suite: `sbt --client "accounting/Integration/testOnly *LedgerIntegrationS
 
 ## Conventions
 
-- Compiler flags include `-Wunused:all`, `-Wvalue-discard`, `-Wnonunit-statement`: no new warnings.
+- Compiler flags include `-Wunused:all`, `-Wvalue-discard`, `-Wnonunit-statement`: no new warnings. CI adds `-Werror`.
 - Style is scalafmt with `newlines.source = keep` and braces kept; run `fmt` before committing.
 - Refined types live in `core`; construct with `.either` for untrusted input, `.assume`/`applyUnsafe` only for trusted data.
 - Domain failures are `Either[E, A]` values, not exceptions; `Db.txE` rolls a transaction back on `Left`.

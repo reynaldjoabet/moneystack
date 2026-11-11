@@ -12,6 +12,7 @@ import moneystack.portfolio.PortfolioModule
 import moneystack.domain.Role
 
 import cats.effect.*
+import cats.effect.std.Supervisor
 import cats.syntax.all.*
 import org.http4s.HttpRoutes
 import org.typelevel.log4cats.Logger
@@ -45,13 +46,14 @@ object App {
       push     <- Resource.eval(Push.sandbox[IO](msg => logger.info(msg)))
 
       // ---- services ----
+      notifications <- Supervisor[IO](await = true)
       books = AccountingModule.make[IO](pool, cfg.ledger.baseCurrency)
       _ <- Resource.eval(books.bootstrap)
       accounting        = LedgerAccounting.make[IO](usersR, books)
       portfolioBook     = PortfolioModule.make[IO](pool, cfg.ledger.baseCurrency)
       budgetBook        = BudgetModule.make[IO](pool, cfg.ledger.baseCurrency)
       portfolioSvc      = PortfolioService.make[IO](portR, holdR, market)
-      recommendationSvc = RecommendationService.make[IO](recsR, portR, usersR, telegram, push)
+      recommendationSvc = RecommendationService.make[IO](recsR, portR, telegram, push, notifications, logger)
       subscriptionSvc   = SubscriptionService.make[IO](usersR, subsR, gateway, crm, accounting)
 
       // ---- auth ----

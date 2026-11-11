@@ -1,7 +1,28 @@
-# Weekly PRs for the GitHub Actions and the compose images. Scala dependencies aren't supported by
-# Dependabot: run `sbt --client dependencyUpdates`, or install Scala Steward for PRs.
+# Weekly PRs for Scala dependencies (sbt, including project/Dependencies.scala), the GitHub Actions and the
+# compose images.
 version: 2
 updates:
+  - package-ecosystem: sbt
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    # One grouped PR at a time, so a broken update doesn't pile up behind others.
+    open-pull-requests-limit: 1
+    labels:
+      - dependencies
+    commit-message:
+      prefix: build(deps)
+    # Scala stays on the LTS line (CLAUDE.md), so its version is bumped by hand.
+    ignore:
+      - dependency-name: "org.scala-lang:scala3*"
+    groups:
+      sbt-all:
+        applies-to: version-updates
+        patterns: ["*"]
+      sbt-security:
+        applies-to: security-updates
+        patterns: ["*"]
   - package-ecosystem: github-actions
     directory: /
     schedule:
