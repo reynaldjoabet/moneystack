@@ -99,7 +99,7 @@ spec:
             periodSeconds: 10
             timeoutSeconds: 3
           resources:
-            # The heap takes 75% of the limit. 512Mi was too small: 680MiB was used after a short load.
+            # The heap takes 60% of the limit, and the process needs about 215MiB more, so 512Mi is too small.
             requests:
               cpu: 500m
               memory: 1Gi

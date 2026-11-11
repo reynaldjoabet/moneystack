@@ -103,8 +103,8 @@ cause carries it too.
 - The image applies Ubuntu's security updates on top of the Temurin base when it is built, and CI fails
   on any fixable high or critical vulnerability in it (Trivy). Dependabot opens weekly PRs for the Scala
   dependencies, the Actions and the compose images; Scala itself stays on the LTS line and is bumped by hand.
-- The JVM sizes its heap to 75% of the container's memory limit and exits on `OutOfMemoryError`, so the
-  orchestrator restarts it.
+- The JVM sizes its heap to 60% of the container's memory limit and exits on `OutOfMemoryError`, so the
+  orchestrator restarts it. The rest is for memory outside the heap: about 215 MiB under load, plus short peaks.
 
 ### Deploying to Kubernetes
 
