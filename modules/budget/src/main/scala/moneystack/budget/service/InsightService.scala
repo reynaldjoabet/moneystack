@@ -91,11 +91,16 @@ object InsightService {
       }
 
     def balanceHistory(user: UserId, period: Period, currency: CurrencyCode): F[Either[BudgetError, List[(LocalDate, Long)]]] =
-      loader.load(user).map { snap =>
+      loader.reference(user).flatMap { snap =>
         val dates =
           (Iterator.iterate(YearMonth.from(period.from))(_.plusMonths(1)).takeWhile(!_.isAfter(YearMonth.from(period.to)))
             .map(_.atEndOfMonth).filter(!_.isAfter(period.to)).toList :+ period.to).distinct
-        dates.traverse(d => Reports.balances(snap.wallets, snap.transactions, d, snap.fx, currency).map(bs => d -> bs.map(_.baseMinor).sum))
+        loader.movedByDay(snap.wallets, period.to).map { days =>
+          dates.traverse { d =>
+            val moved = days.collect { case (w, day, delta) if !day.isAfter(d) => w -> delta }.groupMapReduce(_._1)(_._2)(_ + _)
+            Reports.balances(snap.wallets, moved, d, snap.fx, currency).map(bs => d -> bs.map(_.baseMinor).sum)
+          }
+        }
       }
 
     def streak(user: UserId, today: LocalDate): F[Streak] =

@@ -36,6 +36,9 @@ final class Loader[F[_]: Async](wallets: Wallets[F], catalog: Catalog[F], transa
 
   def moved(ws: List[Wallet], asOf: LocalDate): F[Map[WalletId, Long]] = transactions.moved(ws.map(_.id), asOf)
 
+  def movedByDay(ws: List[Wallet], asOf: LocalDate): F[List[(WalletId, LocalDate, Long)]] =
+    transactions.movedByDay(ws.map(_.id), asOf)
+
   /** The days `user` recorded anything in a wallet they can see. */
   def loggedDays(user: UserId): F[Set[LocalDate]] = walletsOf(user).flatMap(ws => transactions.loggedDays(ws.map(_.id), user))
 

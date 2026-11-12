@@ -75,6 +75,12 @@ object Json {
   final case class ChangePasswordBody(currentPassword: String, newPassword: String)
   given Decoder[ChangePasswordBody] = deriveDecoder
 
+  final case class ForgotPasswordBody(email: Email)
+  given Decoder[ForgotPasswordBody] = deriveDecoder
+
+  final case class ResetPasswordBody(token: String, newPassword: String)
+  given Decoder[ResetPasswordBody] = deriveDecoder
+
   final case class SetRoleBody(role: Role)
   given Decoder[SetRoleBody] = deriveDecoder
 

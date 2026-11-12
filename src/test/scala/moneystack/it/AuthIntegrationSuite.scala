@@ -3,6 +3,7 @@ package moneystack.it
 import moneystack.{App, Main}
 import moneystack.config.*
 import moneystack.domain.CurrencyCode
+import moneystack.external.Mailer
 import moneystack.http.Middleware
 
 import cats.effect.*
@@ -28,15 +29,26 @@ class AuthIntegrationSuite extends moneystack.testkit.PostgresSuite[HttpApp[IO]]
   private val config = AppConfig(
     db = DbConfig("localhost", 5432, "test", None, "test", 4, migrateOnStart = false, DbSsl.Disabled, 30.seconds, 1.minute),
     http = HttpConfig(host"0.0.0.0", port"8080", 30.seconds, 1.minute, 1.second, 1024L * 1024, Nil, Duration.Zero),
-    auth = AuthConfig(Secret("integration-test-secret-of-32-bytes!"), "moneystack", 1.hour),
+    auth = AuthConfig(Secret("integration-test-secret-of-32-bytes!"), "moneystack", 1.hour, 30.minutes),
     telemetry = TelemetryConfig(enabled = false),
     ledger = LedgerConfig(CurrencyCode.USD)
   )
 
   def migrations: List[String] = Main.migrations
 
+  /** Reset tokens the app "emailed", newest first. */
+  private val mailed = Ref.unsafe[IO, List[(String, String)]](Nil)
+  private val mailer = new Mailer[IO] {
+    def sendPasswordReset(to: moneystack.domain.Email, token: String, expiresAt: java.time.Instant): IO[Unit] =
+      mailed.update((to.value: String, token) :: _)
+  }
+
+  /** The token mailed to `email`; sending runs in the background, so this waits for it. */
+  private def mailedTo(email: String): IO[String] =
+    mailed.get.map(_.collectFirst { case (`email`, t) => t }).iterateUntil(_.isDefined).timeout(5.seconds).map(_.get)
+
   def build(pool: Resource[IO, Session[IO]]): Resource[IO, HttpApp[IO]] =
-    App.routes(config, pool, NoOpLogger[IO]).map(r => Middleware[IO](config.http, NoOpLogger[IO])(r.orNotFound))
+    App.routes(config, pool, NoOpLogger[IO], mailer = Some(mailer)).map(r => Middleware[IO](config.http, NoOpLogger[IO])(r.orNotFound))
 
   // ---- client helpers ----
 
@@ -204,6 +216,41 @@ class AuthIntegrationSuite extends moneystack.testkit.PostgresSuite[HttpApp[IO]]
       assertEquals(oldNow._1, Status.Unauthorized)
       assertEquals(fresh._1, Status.Ok)
       assertEquals(newLogin._1, Status.Ok)
+    }
+  }
+
+  test("a forgotten password is reset once with the mailed token, which also signs out other devices") {
+    val email                            = freshEmail
+    def forgot(e: String)                = call(Method.POST, uri"/auth/password/forgot", body = Some(Json.obj("email" -> e.asJson)))
+    def reset(token: String, pw: String) =
+      call(Method.POST, uri"/auth/password/reset", body = Some(Json.obj("token" -> token.asJson, "newPassword" -> pw.asJson)))
+    for {
+      (old, _) <- signup(email)
+      unknown  <- forgot(freshEmail)
+      known    <- forgot(email)
+      first    <- mailedTo(email)
+      _        <- forgot(email)
+      token    <- mailed.get.map(_.collect { case (`email`, t) => t }).iterateUntil(_.size == 2).timeout(5.seconds).map(_.head)
+      stale    <- reset(first, "a brand new password")
+      weak     <- reset(token, "short")
+      forged   <- reset("not-a-token", "a brand new password")
+      done     <- reset(token, "a brand new password")
+      again    <- reset(token, "yet another password")
+      oldNow   <- call(Method.GET, uri"/auth/me", token = Some(old))
+      fresh    <- call(Method.GET, uri"/auth/me", token = str(done._2, "token"))
+      newLogin <- login(email, "a brand new password")
+      stored   <- sessions.use(_.unique(sql"SELECT count(*) FROM password_resets WHERE token_hash = '#$token'".query(skunk.codec.all.int8)))
+    } yield {
+      assertEquals((unknown._1, known._1), (Status.Accepted, Status.Accepted), "the same answer whether or not the account exists")
+      assertEquals(stale._1, Status.BadRequest, "asking again replaces the earlier token")
+      assertEquals(weak._1, Status.BadRequest)
+      assertEquals(forged._1, Status.BadRequest)
+      assertEquals(done._1, Status.Ok, "a refused weak password must not use the token up")
+      assertEquals(again._1, Status.BadRequest, "a token works once")
+      assertEquals(oldNow._1, Status.Unauthorized)
+      assertEquals(fresh._1, Status.Ok)
+      assertEquals(newLogin._1, Status.Ok)
+      assertEquals(stored, 0L, "only a hash of the token is stored")
     }
   }
 

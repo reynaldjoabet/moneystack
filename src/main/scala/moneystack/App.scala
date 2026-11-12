@@ -23,12 +23,13 @@ import scala.concurrent.duration.*
 /** Every route of the app over one session pool. `Main` serves it; the integration suites call it directly. */
 object App {
 
-  /** `draining` turns readiness to 503 once shutdown begins. */
+  /** `draining` turns readiness to 503 once shutdown begins. Without a `mailer`, emails are only logged. */
   def routes(
       cfg: AppConfig,
       pool: Resource[IO, Session[IO]],
       logger: Logger[IO],
-      draining: IO[Boolean] = IO.pure(false)
+      draining: IO[Boolean] = IO.pure(false),
+      mailer: Option[Mailer[IO]] = None
   ): Resource[IO, HttpRoutes[IO]] =
     for {
       // ---- repositories ----
@@ -44,6 +45,7 @@ object App {
       crm      <- Resource.eval(Crm.sandbox[IO])
       telegram <- Resource.eval(Telegram.sandbox[IO](msg => logger.info(msg)))
       push     <- Resource.eval(Push.sandbox[IO](msg => logger.info(msg)))
+      mail     <- Resource.eval(mailer.fold(Mailer.sandbox[IO](msg => logger.info(msg)))(IO.pure))
 
       // ---- services ----
       notifications <- Supervisor[IO](await = true)
@@ -57,12 +59,15 @@ object App {
       subscriptionSvc   = SubscriptionService.make[IO](usersR, subsR, gateway, crm, accounting)
 
       // ---- auth ----
+      passwordResetSvc =
+        PasswordResetService.make[IO](usersR, PasswordResets.make[IO](pool), mail, cfg.auth.passwordResetTtl, notifications, logger)
       tokens    = Tokens.make[IO](cfg.auth.jwtSecret.value, cfg.auth.issuer, cfg.auth.tokenTtl)
       principal = new Principal[IO](tokens, usersR)
     } yield new HealthRoutes[IO](pool, 2.seconds, draining).routes <+>
       new Routes[IO](
         principal,
         tokens,
+        passwordResetSvc,
         usersR,
         portR,
         holdR,

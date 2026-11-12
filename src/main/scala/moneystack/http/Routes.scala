@@ -25,6 +25,7 @@ import java.util.UUID
 final class Routes[F[_]: Async](
     principal: Principal[F],
     tokens: Tokens[F],
+    passwordResets: PasswordResetService[F],
     users: Users[F],
     portfolios: Portfolios[F],
     holdings: Holdings[F],
@@ -148,6 +149,19 @@ final class Routes[F[_]: Async](
                   }
               }
           }
+        }
+      }
+
+    // Always 202, whether or not the email has an account.
+    case req @ POST -> Root / "auth" / "password" / "forgot" =>
+      req.as[Json.ForgotPasswordBody].flatMap(b => passwordResets.request(b.email) *> Accepted())
+
+    // Trades a reset token for a new password. Like a password change, it revokes every earlier token.
+    case req @ POST -> Root / "auth" / "password" / "reset" =>
+      req.as[Json.ResetPasswordBody].flatMap { b =>
+        passwordResets.reset(b.token, b.newPassword).flatMap {
+          case Left(err) => BadRequest(Map("error" -> err).asJson)
+          case Right(u)  => session(u).flatMap(Ok(_))
         }
       }
 

@@ -368,17 +368,19 @@ class BudgetIntegrationSuite extends moneystack.testkit.PostgresSuite[BudgetModu
   test("balances summed in SQL match the same sum over the transactions") {
     val me = newUser
     for {
-      a   <- wallet(me, "A", opening = 1_000L)
-      b   <- wallet(me, "B", opening = 50L)
-      _   <- ok(money.addTransaction(me, txn(a, TxKind.Income, 700, d(1, 2), "In")))
-      _   <- ok(money.addTransaction(me, txn(a, TxKind.Expense, 300, d(1, 3), "Out")))
-      _   <- ok(money.addTransaction(me, txn(a, TxKind.Transfer, 200, d(1, 4), "Same", to = Some(b))))
-      _   <- ok(money.addTransaction(me, txn(b, TxKind.Transfer, 90, d(1, 5), "Different", to = Some(a), toAmount = Some(80L))))
-      _   <- ok(money.addTransaction(me, txn(b, TxKind.Expense, 5, d(2, 1), "Later")))
-      all <- moneystack.budget.db.Transactions.make[IO](sessions).forWallets(List(a.id, b.id))
-      jan <- ok(env.insights.balances(me, d(1, 31), usd))
-      feb <- ok(env.insights.balances(me, d(2, 28), usd))
+      a    <- wallet(me, "A", opening = 1_000L)
+      b    <- wallet(me, "B", opening = 50L)
+      _    <- ok(money.addTransaction(me, txn(a, TxKind.Income, 700, d(1, 2), "In")))
+      _    <- ok(money.addTransaction(me, txn(a, TxKind.Expense, 300, d(1, 3), "Out")))
+      _    <- ok(money.addTransaction(me, txn(a, TxKind.Transfer, 200, d(1, 4), "Same", to = Some(b))))
+      _    <- ok(money.addTransaction(me, txn(b, TxKind.Transfer, 90, d(1, 5), "Different", to = Some(a), toAmount = Some(80L))))
+      _    <- ok(money.addTransaction(me, txn(b, TxKind.Expense, 5, d(2, 1), "Later")))
+      all  <- moneystack.budget.db.Transactions.make[IO](sessions).forWallets(List(a.id, b.id))
+      jan  <- ok(env.insights.balances(me, d(1, 31), usd))
+      feb  <- ok(env.insights.balances(me, d(2, 28), usd))
+      hist <- ok(env.insights.balanceHistory(me, Period(d(1, 1), d(2, 10)), usd))
     } yield {
+      assertEquals(hist, List(d(1, 31) -> 1_440L, d(2, 10) -> 1_435L), "month ends, then the period's last day")
       def expected(asOf: LocalDate) =
         Reports.balances(List(a, b), all, asOf, moneystack.platform.FxTable.unity, usd).toOption.get.map(x =>
           x.walletId -> x.balanceMinor

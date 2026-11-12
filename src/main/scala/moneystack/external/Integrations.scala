@@ -75,6 +75,23 @@ object Telegram {
     })
 }
 
+// ---------- Email ----------
+
+trait Mailer[F[_]] {
+
+  /** Sends the account's owner a link carrying `token`, which sets a new password until `expiresAt`. */
+  def sendPasswordReset(to: Email, token: String, expiresAt: java.time.Instant): F[Unit]
+}
+
+object Mailer {
+
+  /** Logs the email instead of sending it. The log line holds a live reset token: never use this in production. */
+  def sandbox[F[_]: Sync](log: String => F[Unit]): F[Mailer[F]] = Sync[F].pure(new Mailer[F] {
+    def sendPasswordReset(to: Email, token: String, expiresAt: java.time.Instant): F[Unit] =
+      log(s"[mail to=${to.value}] password reset token $token, valid until $expiresAt")
+  })
+}
+
 // ---------- Native push notifications ----------
 
 trait Push[F[_]] {

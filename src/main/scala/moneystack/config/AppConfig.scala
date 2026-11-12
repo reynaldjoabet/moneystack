@@ -62,7 +62,8 @@ final case class HttpConfig(
     drainDelay: FiniteDuration
 )
 
-final case class AuthConfig(jwtSecret: Secret[String], issuer: String, tokenTtl: FiniteDuration)
+/** A password reset token works once, within `passwordResetTtl` of being requested. */
+final case class AuthConfig(jwtSecret: Secret[String], issuer: String, tokenTtl: FiniteDuration, passwordResetTtl: FiniteDuration)
 
 /** When enabled, traces and metrics go out over OTLP, configured by the standard `OTEL_*` variables. */
 final case class TelemetryConfig(enabled: Boolean)
@@ -140,7 +141,8 @@ object AppConfig {
     (
       jwtSecret,
       setting("AUTH_ISSUER").default("moneystack"),
-      setting("AUTH_TOKEN_TTL").as[FiniteDuration].default(FiniteDuration(1, "h"))
+      setting("AUTH_TOKEN_TTL").as[FiniteDuration].default(FiniteDuration(1, "h")),
+      setting("AUTH_PASSWORD_RESET_TTL").as[FiniteDuration].default(FiniteDuration(30, "min"))
     ).parMapN(AuthConfig.apply)
 
   private val telemetry: ConfigValue[Effect, TelemetryConfig] =

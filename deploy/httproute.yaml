@@ -60,6 +60,12 @@ spec:
         - path:
             type: Exact
             value: /auth/password
+        - path:
+            type: Exact
+            value: /auth/password/forgot
+        - path:
+            type: Exact
+            value: /auth/password/reset
       backendRefs:
         - name: moneystack
           port: 80

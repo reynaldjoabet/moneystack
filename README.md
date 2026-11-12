@@ -37,6 +37,7 @@ Every setting is an environment variable. All problems are reported at once on s
 | `AUTH_JWT_SECRET` | required | HS256 signing key, at least 32 bytes; rotating it signs everyone out |
 | `AUTH_TOKEN_TTL` | `1 hour` | how long an access token is valid |
 | `AUTH_ISSUER` | `moneystack` | `iss` claim, checked on every token |
+| `AUTH_PASSWORD_RESET_TTL` | `30 minutes` | how long a password reset token works |
 | `HTTP_HOST` / `HTTP_PORT` | `0.0.0.0` / `8080` | |
 | `HTTP_REQUEST_TIMEOUT` | `30 seconds` | answered 503 past this |
 | `HTTP_IDLE_TIMEOUT` | `60 seconds` | idle keep-alive connections are closed |
@@ -74,6 +75,10 @@ Passwords need 12 to 72 bytes (bcrypt reads no further). `POST /auth/password` w
 `{"currentPassword", "newPassword"}` changes it and `POST /auth/logout-all` signs out every device: both
 revoke every token issued before. The password change answers a new token for the caller.
 
+For a forgotten password, `POST /auth/password/forgot` with `{"email"}` always answers 202 and, if the account
+exists, emails it a one-time token. `POST /auth/password/reset` with `{"token", "newPassword"}` sets the password,
+revokes earlier tokens and answers a new one. A token works once; asking again replaces it.
+
 ### Observability
 
 With `TELEMETRY_ENABLED=true` the app exports traces (one span per request and per SQL statement) and
@@ -91,7 +96,9 @@ cause carries it too.
 
 - Terminate TLS in front of the app (load balancer or ingress), and set `DB_SSL=system` when Postgres is remote.
 - Inject `AUTH_JWT_SECRET` and `DB_PASSWORD` from a secret store, never from the image or the repo.
-- The app does not limit login attempts: rate-limit `/auth/login` at the load balancer or gateway
+- Email, push, Telegram, payments and market data are sandboxes that only log. Replace `Mailer.sandbox` with a
+  real mail client before going live: it writes working password reset tokens to the log.
+- The app does not limit login or password reset attempts: rate-limit `/auth/login` and `/auth/password/*` at the load balancer or gateway
   (`deploy/ratelimit.yaml` does this on Envoy Gateway).
 - Point liveness at `/health/live` and readiness at `/health/ready`. Give the pod a termination grace
   period longer than `HTTP_DRAIN_DELAY` plus `HTTP_SHUTDOWN_TIMEOUT`. Probes are left out of the access log.
