@@ -1,0 +1,35 @@
+# How the Gateway treats clients, for every app behind it.
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: ClientTrafficPolicy
+metadata:
+  name: public
+  namespace: infra
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: public
+  # The real client address, which per-IP rate limits and the audit log depend on. This trusts one proxy in front
+  # of Envoy, such as a cloud HTTP load balancer, to have appended the client to X-Forwarded-For. Set it to the
+  # number of proxies that do: 0 if clients reach Envoy directly (an L4 load balancer), or with no load balancer
+  # at all. Trusting a hop that isn't there lets any client pick its own address and dodge the limits.
+  clientIPDetection:
+    xForwardedFor:
+      numTrustedHops: 1
+  tls:
+    minVersion: "1.2"
+  headers:
+    # Headers with underscores can be read as different headers by different software; refuse them.
+    withUnderscoresAction: RejectRequest
+    # Browsers then use HTTPS only for these hosts, for a year. Set at the Gateway, where TLS ends; the apps set
+    # their other security headers themselves. includeSubDomains covers every host under the domain: drop it
+    # unless all of them serve HTTPS.
+    lateResponseHeaders:
+      set:
+        - name: Strict-Transport-Security
+          value: max-age=31536000; includeSubDomains
+  timeout:
+    http:
+      # A client must finish sending a request within this; a slow sender can't hold a connection open.
+      requestReceivedTimeout: 60s
+      idleTimeout: 120s

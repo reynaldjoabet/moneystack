@@ -124,9 +124,16 @@ cause carries it too.
 ### Deploying to Kubernetes
 
 [deploy/](deploy/) holds a Kustomize app for a cluster with a shared Gateway. Use one gateway, not both:
-Envoy Gateway (`kubectl apply -k deploy`, expects Gateway `infra/public`) or HAProxy Unified Gateway
-(`kubectl apply -k deploy/haproxy`; [deploy/haproxy/platform/](deploy/haproxy/platform/) installs the gateway).
-Everything else is shared, in [deploy/base/](deploy/base/). Before applying:
+Envoy Gateway (`kubectl apply -k deploy`) or HAProxy Unified Gateway (`kubectl apply -k deploy/haproxy`). Each
+has a `platform/` folder, applied once per cluster, that installs the shared Gateway: for Envoy,
+[deploy/platform/](deploy/platform/). Everything else is shared, in [deploy/base/](deploy/base/).
+
+On Envoy, the platform runs two proxy replicas with a disruption budget, requires TLS 1.2, sends HSTS, rejects
+headers with underscores and limits how long a client may take to send a request
+([clienttraffic.yaml](deploy/platform/clienttraffic.yaml)). For moneystack, [backendtraffic.yaml](deploy/backendtraffic.yaml)
+compresses responses (Brotli or gzip), retries only failures where the request never reached a Pod, takes
+failing Pods out of rotation and caps queued requests. [deploy/examples/admin-allowlist.yaml](deploy/examples/admin-allowlist.yaml)
+optionally limits `/admin` to your own networks. Before applying:
 
 1. Build and push an image, then set it in `deploy/base/kustomization.yaml`. CI doesn't push one yet.
 2. Set `DB_HOST` in `deploy/base/deployment.yaml` to the database's real hostname. With `DB_SSL=system` the
@@ -135,8 +142,9 @@ Everything else is shared, in [deploy/base/](deploy/base/). Before applying:
 3. Set the host in the `httproute.yaml` of the gateway you use (both routes).
 4. Create the Secret: `kubectl create namespace moneystack`, then the command in that gateway's `kustomization.yaml`.
 5. Make sure the gateway sees real client IPs, or all users behind the load balancer share one login rate
-   limit. On Envoy, set `clientIPDetection` or PROXY protocol in a `ClientTrafficPolicy` on the Gateway. On
-   HAProxy, see `deploy/haproxy/platform/values.yaml`.
+   limit. On Envoy, set `numTrustedHops` in `deploy/platform/clienttraffic.yaml` to the number of proxies in
+   front of Envoy: too high lets clients choose their own address. On HAProxy, see
+   `deploy/haproxy/platform/values.yaml`.
 
 `scripts/certs.sh` creates a private CA, signs server certificates and builds that trust store; run it with
 no arguments for usage. Keys go to `certs/`, which git ignores. Browsers don't trust this CA, so use it for

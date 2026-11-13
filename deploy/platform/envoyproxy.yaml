@@ -1,0 +1,28 @@
+# How the Gateway's Envoy proxies run. Without this, Envoy Gateway runs one replica: a single node drain or crash
+# takes every app offline.
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: EnvoyProxy
+metadata:
+  name: public
+  namespace: infra
+spec:
+  provider:
+    type: Kubernetes
+    kubernetes:
+      envoyDeployment:
+        # Each replica keeps its own local rate-limit counts, so an app's per-IP limit is multiplied by this.
+        replicas: 2
+        container:
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              memory: 512Mi
+      envoyPDB:
+        minAvailable: 1
+  # On shutdown, keep serving while the load balancer notices, then let in-flight requests finish. The app's own
+  # limit is 30s (HTTP_REQUEST_TIMEOUT), so draining waits up to that.
+  shutdown:
+    minDrainDuration: 10s
+    drainTimeout: 35s

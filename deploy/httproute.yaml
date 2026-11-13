@@ -31,6 +31,9 @@ spec:
         - path:
             type: PathPrefix
             value: /
+      # Just over the app's own 30s limit, so the app's 503 answers first; Envoy's applies if a Pod hangs.
+      timeouts:
+        request: 35s
       backendRefs:
         - name: moneystack
           port: 80

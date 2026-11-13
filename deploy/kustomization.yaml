@@ -10,3 +10,4 @@ resources:
   - base
   - httproute.yaml
   - ratelimit.yaml
+  - backendtraffic.yaml

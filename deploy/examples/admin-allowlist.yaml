@@ -1,0 +1,45 @@
+# OPTIONAL: only these networks may reach /admin, on top of the admin role the app already requires. Not applied
+# by default (it isn't in any kustomization.yaml): set the CIDRs first, or every admin is locked out.
+#
+#   kubectl apply -f deploy/examples/admin-allowlist.yaml
+#
+# It relies on the real client address, so on clientIPDetection in deploy/platform/clienttraffic.yaml.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: moneystack-admin
+  namespace: moneystack
+spec:
+  parentRefs:
+    - name: public
+      namespace: infra
+      sectionName: https
+  hostnames:
+    - money.example.com
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /admin
+      backendRefs:
+        - name: moneystack
+          port: 80
+---
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: SecurityPolicy
+metadata:
+  name: moneystack-admin
+  namespace: moneystack
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: moneystack-admin
+  authorization:
+    defaultAction: Deny
+    rules:
+      - name: office-and-vpn
+        action: Allow
+        principal:
+          clientCIDRs:
+            - 198.51.100.0/24 # replace with your office and VPN ranges

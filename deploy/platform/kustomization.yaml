@@ -1,0 +1,12 @@
+# The platform team's part for Envoy Gateway: one shared Gateway and how its proxies run. Install Envoy Gateway
+# first (once per cluster), then apply this, then the apps (`kubectl apply -k deploy`).
+#
+#   helm install eg oci://docker.io/envoyproxy/gateway-helm --version v1.9.3 \
+#     -n envoy-gateway-system --create-namespace
+#   kubectl apply -k deploy/platform
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - gateway.yaml
+  - envoyproxy.yaml
+  - clienttraffic.yaml

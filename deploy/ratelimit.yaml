@@ -5,8 +5,8 @@
 # is 10 times the replicas. Lower it if you run many, or move to `global` for one shared count.
 #
 # It only works if Envoy sees real client addresses. Behind a cloud load balancer every request may look
-# like it comes from the LB, and all users share one bucket. The platform team must set clientIPDetection
-# or PROXY protocol in a ClientTrafficPolicy on Gateway infra/public, to match that load balancer.
+# like it comes from the LB, and all users share one bucket: see clientIPDetection in
+# deploy/platform/clienttraffic.yaml, which must match the load balancer in front of Envoy.
 apiVersion: gateway.envoyproxy.io/v1alpha1
 kind: BackendTrafficPolicy
 metadata:
