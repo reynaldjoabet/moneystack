@@ -29,7 +29,7 @@ class AuthIntegrationSuite extends moneystack.testkit.PostgresSuite[HttpApp[IO]]
   private val config = AppConfig(
     db = DbConfig("localhost", 5432, "test", None, "test", 4, migrateOnStart = false, DbSsl.Disabled, 30.seconds, 1.minute),
     http = HttpConfig(host"0.0.0.0", port"8080", 30.seconds, 1.minute, 1.second, 1024L * 1024, Nil, Duration.Zero),
-    auth = AuthConfig(Secret("integration-test-secret-of-32-bytes!"), "moneystack", 1.hour, 30.minutes),
+    auth = AuthConfig(Secret("integration-test-secret-of-32-bytes!"), "moneystack", 1.hour, 30.minutes, Duration.Zero),
     telemetry = TelemetryConfig(enabled = false),
     ledger = LedgerConfig(CurrencyCode.USD)
   )
@@ -251,6 +251,63 @@ class AuthIntegrationSuite extends moneystack.testkit.PostgresSuite[HttpApp[IO]]
       assertEquals(fresh._1, Status.Ok)
       assertEquals(newLogin._1, Status.Ok)
       assertEquals(stored, 0L, "only a hash of the token is stored")
+    }
+  }
+
+  test("an account is emailed one reset token per cooldown, and the earlier one keeps working") {
+    val resets = moneystack.db.PasswordResets.make[IO](sessions)
+    val hash   = (c: Char) => c.toString * 64
+    for {
+      (_, id) <- signup()
+      user = moneystack.domain.UserId.assume(UUID.fromString(id))
+      now    <- IO.realTimeInstant
+      first  <- resets.create(user, hash('a'), now.plusSeconds(600), now, 1.minute)
+      second <- resets.create(user, hash('b'), now.plusSeconds(600), now.plusSeconds(20), 1.minute)
+      kept   <- resets.consume(hash('a'), now.plusSeconds(21))
+      later  <- resets.create(user, hash('c'), now.plusSeconds(600), now.plusSeconds(61), 1.minute)
+      b      <- resets.consume(hash('b'), now.plusSeconds(62))
+      c      <- resets.consume(hash('c'), now.plusSeconds(62))
+    } yield {
+      assertEquals((first, second, later), (true, false, true))
+      assertEquals(kept, Some(user), "the token already sent still works")
+      assertEquals(b, None, "the refused one was never stored")
+      assertEquals(c, Some(user))
+    }
+  }
+
+  test("security events are recorded, and only an admin can read them") {
+    val email                                             = freshEmail
+    def audit(token: String, user: Option[String] = None) =
+      call(Method.GET, user.fold(uri"/admin/audit")(u => uri"/admin/audit".withQueryParam("user", u)), token = Some(token))
+    for {
+      (token, id)           <- signup(email)
+      (adminToken, adminId) <- signup()
+      _                     <- promote(adminId, "admin")
+      _                     <- login(email, "wrong horse battery!")
+      _                     <- env.run(
+        Request[IO](Method.POST, uri"/auth/login").putHeaders(Header.Raw(ci"X-Forwarded-For", "203.0.113.9"))
+          .withEntity(Json.obj("email" -> email.asJson, "password" -> "correct horse battery".asJson))
+      )
+      investor <- audit(token)
+      _    <- call(Method.PUT, uri"/admin/users" / id / "role", token = Some(adminToken), body = Some(Json.obj("role" -> "analyst".asJson)))
+      _    <- call(Method.POST, uri"/auth/logout-all", token = Some(token))
+      mine <- audit(adminToken, Some(id))
+      bad  <- audit(adminToken, Some("nope"))
+      all  <- audit(adminToken)
+    } yield {
+      val events = mine._2.asArray.get.toList
+      assertEquals(investor._1, Status.Forbidden)
+      assertEquals(bad._1, Status.BadRequest)
+      assertEquals(
+        events.flatMap(e => str(e, "action")),
+        List("tokens.revoked", "role.changed", "login.succeeded", "login.failed", "signup"),
+        "newest first"
+      )
+      val role = events(1)
+      assertEquals((str(role, "actorId"), str(role, "subjectId"), str(role, "detail")), (Some(adminId), Some(id), Some("role=analyst")))
+      assertEquals(str(events(2), "forwardedFor"), Some("203.0.113.9"))
+      assert(events.forall(e => str(e, "requestId").exists(_.nonEmpty)))
+      assert(all._2.asArray.get.size > events.size, "without a filter it covers every account")
     }
   }
 

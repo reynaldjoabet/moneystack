@@ -1,7 +1,7 @@
 package moneystack.service
 
 import moneystack.auth.Passwords
-import moneystack.db.{PasswordResets, Users}
+import moneystack.db.{AuditLog, PasswordResets, Users}
 import moneystack.domain.*
 import moneystack.external.Mailer
 
@@ -20,9 +20,10 @@ trait PasswordResetService[F[_]] {
 
   /**
    * Emails a reset token if `email` has an account. It answers at once and the same way either way, working in the
-   * background, so neither the response nor its timing reveals whether the account exists.
+   * background, so neither the response nor its timing reveals whether the account exists. An account that was sent
+   * one within `cooldown` isn't sent another, so nobody can flood its inbox.
    */
-  def request(email: Email): F[Unit]
+  def request(email: Email, origin: AuditLog.Origin): F[Unit]
 
   /** Sets the password and revokes every token the user holds. `Left` says what was wrong, for the client. */
   def reset(token: String, newPassword: String): F[Either[String, User]]
@@ -48,23 +49,27 @@ object PasswordResetService {
       resets: PasswordResets[F],
       mailer: Mailer[F],
       ttl: FiniteDuration,
+      cooldown: FiniteDuration,
+      audit: AuditLog[F],
       background: Supervisor[F],
       logger: Logger[F]
   ): PasswordResetService[F] = new PasswordResetService[F] {
 
-    private def send(email: Email): F[Unit] =
+    private def send(email: Email, origin: AuditLog.Origin): F[Unit] =
       users.findByEmail(email).flatMap(_.traverse_ { u =>
         for {
           token <- newToken[F]
           now   <- Async[F].realTimeInstant
           expires = now.plusMillis(ttl.toMillis)
-          _ <- resets.create(u.id, hashOf(token), expires, now)
-          _ <- mailer.sendPasswordReset(u.email, token, expires)
+          created <- resets.create(u.id, hashOf(token), expires, now, cooldown)
+          skipped = Option.unless(created)("not sent: one was sent moments ago")
+          _ <- audit.record(AuditLog.PasswordResetRequested, origin, None, Some(u.id), skipped)
+          _ <- mailer.sendPasswordReset(u.email, token, expires).whenA(created)
         } yield ()
       })
 
-    def request(email: Email): F[Unit] =
-      background.supervise(send(email).handleErrorWith(e => logger.error(e)("could not send a password reset email"))).void
+    def request(email: Email, origin: AuditLog.Origin): F[Unit] =
+      background.supervise(send(email, origin).handleErrorWith(e => logger.error(e)("could not send a password reset email"))).void
 
     def reset(token: String, newPassword: String): F[Either[String, User]] =
       Passwords.validate(newPassword) match {

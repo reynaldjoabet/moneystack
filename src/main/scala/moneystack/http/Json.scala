@@ -49,6 +49,8 @@ object Json {
   }
   val userEncoder: Encoder[User] = summon[Encoder[User]]
 
+  given Encoder[moneystack.db.AuditLog.Event] = deriveEncoder
+
   given Encoder[Instrument]           = deriveEncoder
   given Encoder[ModelPortfolio]       = deriveEncoder
   given Encoder[ModelAllocation]      = deriveEncoder

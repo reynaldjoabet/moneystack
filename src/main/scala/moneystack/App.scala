@@ -59,8 +59,17 @@ object App {
       subscriptionSvc   = SubscriptionService.make[IO](usersR, subsR, gateway, crm, accounting)
 
       // ---- auth ----
-      passwordResetSvc =
-        PasswordResetService.make[IO](usersR, PasswordResets.make[IO](pool), mail, cfg.auth.passwordResetTtl, notifications, logger)
+      audit            = AuditLog.make[IO](pool, logger)
+      passwordResetSvc = PasswordResetService.make[IO](
+        usersR,
+        PasswordResets.make[IO](pool),
+        mail,
+        cfg.auth.passwordResetTtl,
+        cfg.auth.passwordResetCooldown,
+        audit,
+        notifications,
+        logger
+      )
       tokens    = Tokens.make[IO](cfg.auth.jwtSecret.value, cfg.auth.issuer, cfg.auth.tokenTtl)
       principal = new Principal[IO](tokens, usersR)
     } yield new HealthRoutes[IO](pool, 2.seconds, draining).routes <+>
@@ -68,6 +77,7 @@ object App {
         principal,
         tokens,
         passwordResetSvc,
+        audit,
         usersR,
         portR,
         holdR,

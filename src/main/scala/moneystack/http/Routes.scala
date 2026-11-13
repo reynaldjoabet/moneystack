@@ -26,6 +26,7 @@ final class Routes[F[_]: Async](
     principal: Principal[F],
     tokens: Tokens[F],
     passwordResets: PasswordResetService[F],
+    audit: AuditLog[F],
     users: Users[F],
     portfolios: Portfolios[F],
     holdings: Holdings[F],
@@ -72,6 +73,9 @@ final class Routes[F[_]: Async](
       case _                               => NotFound(Map("error" -> "portfolio not found").asJson)
     }
 
+  private def origin(req: Request[F]): AuditLog.Origin =
+    AuditLog.Origin(Middleware.requestId(req), req.headers.get(org.typelevel.ci.CIString("X-Forwarded-For")).map(_.head.value))
+
   private def session(u: User): F[Json.AuthSession] =
     tokens.issue(u.id, u.tokenVersion).map(t => Json.AuthSession(t.token, t.expiresAt, u))
 
@@ -107,7 +111,9 @@ final class Routes[F[_]: Async](
                     createdAt = now
                   )
                   resp <- users.create(u)
-                    .flatMap(saved => session(saved).flatMap(Created(_)))
+                    .flatMap(saved =>
+                      audit.record(AuditLog.Signup, origin(req), Some(saved.id), Some(saved.id)) *> session(saved).flatMap(Created(_))
+                    )
                     // Two signups for one email can both pass the lookup; the unique index decides.
                     .recoverWith { case SqlState.UniqueViolation(_) => emailTaken }
                 } yield resp
@@ -120,6 +126,7 @@ final class Routes[F[_]: Async](
         for {
           found <- users.findByEmail(b.email)
           ok    <- Passwords.verify[F](b.password, found.map(_.passwordHash))
+          _     <- audit.record(if (ok) AuditLog.LoginSucceeded else AuditLog.LoginFailed, origin(req), None, found.map(_.id))
           resp  <- found.filter(_ => ok) match {
             case Some(u) => session(u).flatMap(Ok(_))
             case None    => Unauthorized(
@@ -138,14 +145,17 @@ final class Routes[F[_]: Async](
       signedIn(req) { u =>
         req.as[Json.ChangePasswordBody].flatMap { b =>
           Passwords.verify[F](b.currentPassword, Some(u.passwordHash)).flatMap {
-            case false => Forbidden(Map("error" -> "current password is wrong").asJson)
-            case true  =>
+            case false =>
+              audit.record(AuditLog.PasswordChangeRefused, origin(req), Some(u.id), Some(u.id)) *>
+                Forbidden(Map("error" -> "current password is wrong").asJson)
+            case true =>
               Passwords.validate(b.newPassword) match {
                 case Left(err) => BadRequest(Map("error" -> err).asJson)
                 case Right(pw) =>
                   Passwords.hash[F](pw).flatMap(users.setPassword(u.id, _)).flatMap {
-                    case Some(updated) => session(updated).flatMap(Ok(_))
-                    case None          => HttpSupport.unauthorized[F]
+                    case Some(updated) =>
+                      audit.record(AuditLog.PasswordChanged, origin(req), Some(u.id), Some(u.id)) *> session(updated).flatMap(Ok(_))
+                    case None => HttpSupport.unauthorized[F]
                   }
               }
           }
@@ -154,20 +164,23 @@ final class Routes[F[_]: Async](
 
     // Always 202, whether or not the email has an account.
     case req @ POST -> Root / "auth" / "password" / "forgot" =>
-      req.as[Json.ForgotPasswordBody].flatMap(b => passwordResets.request(b.email) *> Accepted())
+      req.as[Json.ForgotPasswordBody].flatMap(b => passwordResets.request(b.email, origin(req)) *> Accepted())
 
     // Trades a reset token for a new password. Like a password change, it revokes every earlier token.
     case req @ POST -> Root / "auth" / "password" / "reset" =>
       req.as[Json.ResetPasswordBody].flatMap { b =>
         passwordResets.reset(b.token, b.newPassword).flatMap {
-          case Left(err) => BadRequest(Map("error" -> err).asJson)
-          case Right(u)  => session(u).flatMap(Ok(_))
+          case Left(err) =>
+            audit.record(AuditLog.PasswordResetRefused, origin(req), None, None) *> BadRequest(Map("error" -> err).asJson)
+          case Right(u) => audit.record(AuditLog.PasswordReset, origin(req), None, Some(u.id)) *> session(u).flatMap(Ok(_))
         }
       }
 
     // Signs the user out on every device: all their tokens stop working.
     case req @ POST -> Root / "auth" / "logout-all" =>
-      signedIn(req)(u => users.revokeTokens(u.id) *> NoContent())
+      signedIn(req)(u =>
+        users.revokeTokens(u.id) *> audit.record(AuditLog.TokensRevoked, origin(req), Some(u.id), Some(u.id)) *> NoContent()
+      )
 
     // ---- investor: portfolios + holdings + valuations ----
 
@@ -316,11 +329,28 @@ final class Routes[F[_]: Async](
 
     case req @ PUT -> Root / "admin" / "users" / UserIdVar(uid) / "role" =>
       requireRole(req, Role.Admin).flatMap {
+        case Left(r)      => Async[F].pure(r)
+        case Right(admin) =>
+          req.as[Json.SetRoleBody].flatMap(b =>
+            users.setRole(uid, b.role).flatMap {
+              case None    => NotFound(Map("error" -> "user not found").asJson)
+              case Some(u) =>
+                audit.record(AuditLog.RoleChanged, origin(req), Some(admin.id), Some(u.id), Some(s"role=${Role.render(b.role)}")) *>
+                  Ok(Json.userEncoder(u))
+            }
+          )
+      }
+
+    // ---- admin: audit log, newest first; `user` narrows it to events about one account ----
+
+    case req @ GET -> Root / "admin" / "audit" :? AuditUser(user) +& AuditLimit(limit) =>
+      requireRole(req, Role.Admin).flatMap {
         case Left(r)  => Async[F].pure(r)
         case Right(_) =>
-          req.as[Json.SetRoleBody].flatMap(b =>
-            users.setRole(uid, b.role).flatMap(_.fold(NotFound(Map("error" -> "user not found").asJson))(u => Ok(Json.userEncoder(u))))
-          )
+          user.traverse(s => UserIdVar.unapply(s).toRight(s)) match {
+            case Left(_)        => BadRequest(Map("error" -> "user must be a UUID").asJson)
+            case Right(subject) => audit.recent(subject, limit.getOrElse(100).max(1).min(500)).flatMap(Ok(_))
+          }
       }
 
     // ---- accountant: payment list ----
@@ -336,5 +366,7 @@ final class Routes[F[_]: Async](
       }
   }
 
-  private object RecLimit extends OptionalQueryParamDecoderMatcher[Int]("limit")
+  private object AuditUser  extends OptionalQueryParamDecoderMatcher[String]("user")
+  private object AuditLimit extends OptionalQueryParamDecoderMatcher[Int]("limit")
+  private object RecLimit   extends OptionalQueryParamDecoderMatcher[Int]("limit")
 }

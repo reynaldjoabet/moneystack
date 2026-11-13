@@ -38,6 +38,7 @@ Every setting is an environment variable. All problems are reported at once on s
 | `AUTH_TOKEN_TTL` | `1 hour` | how long an access token is valid |
 | `AUTH_ISSUER` | `moneystack` | `iss` claim, checked on every token |
 | `AUTH_PASSWORD_RESET_TTL` | `30 minutes` | how long a password reset token works |
+| `AUTH_PASSWORD_RESET_COOLDOWN` | `1 minute` | an account is emailed at most one reset token in this time |
 | `HTTP_HOST` / `HTTP_PORT` | `0.0.0.0` / `8080` | |
 | `HTTP_REQUEST_TIMEOUT` | `30 seconds` | answered 503 past this |
 | `HTTP_IDLE_TIMEOUT` | `60 seconds` | idle keep-alive connections are closed |
@@ -77,7 +78,14 @@ revoke every token issued before. The password change answers a new token for th
 
 For a forgotten password, `POST /auth/password/forgot` with `{"email"}` always answers 202 and, if the account
 exists, emails it a one-time token. `POST /auth/password/reset` with `{"token", "newPassword"}` sets the password,
-revokes earlier tokens and answers a new one. A token works once; asking again replaces it.
+revokes earlier tokens and answers a new one. A token works once; asking again replaces it, except within
+`AUTH_PASSWORD_RESET_COOLDOWN`, when no second email is sent and the first token stays valid.
+
+Signups, logins (failed ones too), password changes and resets, sign-outs everywhere and role changes are recorded
+in `audit_events`. An admin reads them newest first with `GET /admin/audit?user={id}&limit=100` (`user` is
+optional, `limit` at most 500). Each event has the request id and the `X-Forwarded-For` header as received, which
+names the real client only when the gateway sets it. Nothing deletes old events: prune or archive the table
+to your retention policy.
 
 ### Observability
 
