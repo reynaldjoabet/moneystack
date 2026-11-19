@@ -30,6 +30,8 @@ lazy val commonSettings = Seq(
     "-Xmax-inlines",
     "64"
   ),
+  // skunk is built on an older otel4s; keep every otel4s module on one version, as mixing them can fail at runtime.
+  dependencyOverrides += "org.typelevel" %% "otel4s-semconv-metrics" % Versions.otel4s,
   // Warnings fail CI (GitHub Actions sets CI=true) but not a local build, so work in progress still compiles.
   scalacOptions ++= (if (sys.env.get("CI").contains("true")) Seq("-Werror") else Nil),
   // sbt 2 writes SemanticDB to a separate `meta/` directory, but sbt-scalafix only reads `classDirectory`.
