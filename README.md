@@ -121,6 +121,27 @@ cause carries it too.
 - The JVM sizes its heap to 60% of the container's memory limit and exits on `OutOfMemoryError`, so the
   orchestrator restarts it. The rest is for memory outside the heap: about 215 MiB under load, plus short peaks.
 
+### PostgreSQL
+
+Supported: 18 and 19. The tests run on 18 by default and CI also runs them on 19; set
+`MONEYSTACK_TEST_POSTGRES=postgres:19-alpine` to do the same locally. The schema uses nothing PostgreSQL 19
+changed incompatibly. On 19, foreign key checks get faster without any change here, and JIT is off by default,
+which suits these short queries.
+
+Every table has a primary key, so on 19 a bloated table can be rebuilt without blocking reads or writes:
+
+```sql
+REPACK (CONCURRENTLY) budget.transactions;
+```
+
+It can't run in a transaction and fails if more than about 104 million rows change while it runs. Useful views on
+19: `pg_stat_autovacuum_scores` (which tables autovacuum will process next), `pg_stat_lock` (lock waits by type)
+and `pg_stat_progress_repack`.
+
+Foreign keys into large tables have an index, built with `CREATE INDEX CONCURRENTLY` so a deploy doesn't block
+writes. If such a build fails, it leaves an invalid index: find it with
+`SELECT indexrelid::regclass FROM pg_index WHERE NOT indisvalid`, drop it, run `flyway repair` and deploy again.
+
 ### Deploying to Kubernetes
 
 [deploy/](deploy/) holds a Kustomize app for a cluster with a shared Gateway. Use one gateway, not both:

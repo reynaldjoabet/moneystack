@@ -19,9 +19,12 @@ object Postgres {
   private given TracerProvider[IO] = TracerProvider.noop[IO]
   private given MeterProvider[IO]  = MeterProvider.noop[IO]
 
+  /** The oldest version the app supports, unless `MONEYSTACK_TEST_POSTGRES` names another image (CI also runs 19). */
+  val image: String = sys.env.getOrElse("MONEYSTACK_TEST_POSTGRES", "postgres:18-alpine")
+
   private val container: Resource[IO, PostgreSQLContainer] =
     Resource.make(IO.blocking {
-      val c = new PostgreSQLContainer(DockerImageName.parse("postgres:18-alpine"))
+      val c = new PostgreSQLContainer(DockerImageName.parse(image).asCompatibleSubstituteFor("postgres"))
       c.start()
       c
     })(c => IO.blocking(c.stop()))

@@ -24,6 +24,24 @@ class AppIntegrationSuite extends moneystack.testkit.PostgresSuite[HealthRoutes[
     }
   }
 
+  test("foreign keys into large tables are indexed, and every index is valid") {
+    for {
+      // V2 (V6 for the app) builds them CONCURRENTLY, which fails outright if Flyway runs it in a transaction.
+      fkIndexes <- scalar("SELECT count(*) FROM pg_indexes WHERE indexname LIKE '%\\_fk\\_idx'")
+      invalid   <- scalar("SELECT count(*) FROM pg_index WHERE NOT indisvalid")
+      applied   <- scalar(
+        """SELECT (SELECT count(*) FROM flyway_history_budget WHERE version = '2' AND success)
+                 + (SELECT count(*) FROM flyway_history_portfolio WHERE version = '2' AND success)
+                 + (SELECT count(*) FROM flyway_history_accounting WHERE version = '2' AND success)
+                 + (SELECT count(*) FROM flyway_history_app WHERE version = '6' AND success)"""
+      )
+    } yield {
+      assertEquals(fkIndexes, 26L)
+      assertEquals(invalid, 0L)
+      assertEquals(applied, 4L)
+    }
+  }
+
   test("tables from every module exist side by side") {
     assertIO(
       scalar(

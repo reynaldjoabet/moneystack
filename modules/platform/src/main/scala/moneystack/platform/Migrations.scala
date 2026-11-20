@@ -3,6 +3,7 @@ package moneystack.platform
 import cats.effect.Sync
 import cats.syntax.all.*
 import org.flywaydb.core.Flyway
+import org.flywaydb.database.postgresql.PostgreSQLConfigurationExtension
 
 /**
  * Flyway migrations, one history table per module. A module's scripts live in
@@ -17,8 +18,12 @@ object Migrations {
   def run[F[_]: Sync](target: Target, modules: List[String]): F[Int] =
     modules.traverse(m => Sync[F].blocking(flyway(target, m).migrate().migrationsExecuted)).map(_.sum)
 
-  private def flyway(target: Target, module: String): Flyway =
-    Flyway.configure()
+  private def flyway(target: Target, module: String): Flyway = {
+    val config = Flyway.configure()
+    // Flyway's default lock is held inside a transaction on a second connection, and CREATE INDEX CONCURRENTLY
+    // waits for every open transaction: the two would wait on each other forever. A session lock doesn't.
+    config.getConfigurationExtension(classOf[PostgreSQLConfigurationExtension]).setTransactionalLock(false)
+    config
       .dataSource(target.jdbcUrl, target.user, target.password.orNull)
       .locations(s"classpath:db/migration/$module")
       .table(s"flyway_history_$module")
@@ -30,4 +35,5 @@ object Migrations {
       .baselineOnMigrate(true)
       .baselineVersion("0")
       .load()
+  }
 }

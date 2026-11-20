@@ -84,6 +84,36 @@ jobs:
       - name: Compile and test
         run: sbt -v "Test/compile; test; Integration/test"
 
+  # The matrix above tests the oldest supported Postgres (18, the testkit default); this checks the newest.
+  postgres-19:
+    name: Postgres 19
+    needs: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      MONEYSTACK_TEST_POSTGRES: postgres:19-alpine
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Java
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: 'sbt'
+          cache-dependency-path: |
+            **/*.sbt
+            **/project/build.properties
+            **/project/*.scala
+            **/project/**/*.scala
+
+      - name: Set up sbt
+        uses: sbt/setup-sbt@v1
+
+      - name: Integration tests
+        run: sbt -v Integration/test
+
   # Builds the image the way a release would, once, and fails on fixable high or critical vulnerabilities in it
   # (base image packages and every jar), so a packaging break or a vulnerable dependency stops here.
   image:
