@@ -50,13 +50,64 @@ object BudgetCsv {
         }
     }
 
+  private val Dashes  = "\u2010\u2011\u2012\u2013\u2014\u2015\u2212\uFE63\uFF0D"
+  private val Symbols = "$€£¥₴₽\u00A0 "
+  private val Plain   = "(\\d+(\\.\\d+)?|\\.\\d+)".r
+
+  /** `1,234,567` (or with dots): a first group of 1 to 3 digits, then groups of exactly 3. */
+  private def grouped(s: String, sep: Char): Option[String] = {
+    val parts = s.split(java.util.regex.Pattern.quote(sep.toString), -1).toList
+    Option.when(
+      parts.headOption.exists(h => h.nonEmpty && h.length <= 3 && h.forall(_.isDigit)) &&
+        parts.tail.forall(p => p.length == 3 && p.forall(_.isDigit))
+    )(parts.mkString)
+  }
+
+  /**
+   * An amount as banks export it: `-1234.56`, `+12`, `(1,234.56)` (negative), `1234.56 DR` (negative) or `CR`,
+   * currency symbols, a Unicode minus, `1.234,56` and `1,234.56`, and repeated separators grouping thousands
+   * (`3,250,000`, `1.500.000`). A lone comma followed by exactly 3 digits groups thousands (`1,234` is 1234), as
+   * this importer always read it; followed by 1 or 2 digits it is the decimal point (`12,5`). `None` for anything
+   * else, including a `DR`/`CR` suffix next to a sign, which contradicts it.
+   */
+  def amount(raw: String): Option[BigDecimal] = {
+    var s = raw.trim
+    if (s.nonEmpty && Dashes.contains(s.head)) s = "-" + s.tail
+    val suffix = "(?i)\\s*(DR|CR)\\.?$".r.findFirstMatchIn(s)
+    val debit  = suffix.exists(_.group(1).equalsIgnoreCase("DR"))
+    suffix.foreach(m => s = s.substring(0, m.start))
+    val parens = s.length >= 2 && s.head == '(' && s.last == ')'
+    if (parens) s = s.substring(1, s.length - 1)
+    def sign(): Option[Char] = s.headOption.filter(c => c == '-' || c == '+').map { c => s = s.tail; c }
+    val before               = sign()
+    s = s.filterNot(c => Symbols.contains(c))
+    val after   = sign()
+    val negated = List(before, after).flatten.count(_ == '-') % 2 == 1
+    if (suffix.isDefined && (parens || before.contains('-') || after.contains('-'))) None
+    else {
+      val commas  = s.count(_ == ',')
+      val periods = s.count(_ == '.')
+      val number  =
+        if (commas > 0 && periods > 0) {
+          // Both: the last one is the decimal point, the other groups thousands.
+          if (s.lastIndexOf(',') > s.lastIndexOf('.')) Some(s.replace(".", "").replace(',', '.')) else Some(s.replace(",", ""))
+        } else if (commas > 1) grouped(s, ',')
+        else if (periods > 1) grouped(s, '.')
+        else if (commas == 1) {
+          val decimals = s.length - s.indexOf(',') - 1
+          if (decimals == 3) grouped(s, ',') else Some(s.replace(',', '.'))
+        } else Some(s)
+      number.filter(Plain.matches).map(BigDecimal(_)).map(n => if (debit || (parens != negated)) -n else n)
+    }
+  }
+
   private def row(cols: List[String], cells: List[String], line: Int, titleCol: String): Either[String, CsvRow] = {
     val m = cols.zip(cells.map(_.trim)).toMap.filter(_._2.nonEmpty)
     for {
       date <- m.get("date").toRight(s"line $line: date is required")
         .flatMap(d => scala.util.Try(LocalDate.parse(d)).toEither.left.map(_ => s"line $line: invalid date $d"))
       raw <- m.get("amount").toRight(s"line $line: amount is required")
-        .flatMap(a => scala.util.Try(BigDecimal(a.replace(",", ""))).toEither.left.map(_ => s"line $line: amount is not a number: $a"))
+        .flatMap(a => amount(a).toRight(s"line $line: amount is not a number: $a"))
       _    <- Either.cond(raw != 0, (), s"line $line: amount must not be zero")
       kind <- m.get("type").fold[Either[String, TxKind]](Right(if (raw < 0) TxKind.Expense else TxKind.Income))(t =>
         TxKind.parse(t).left.map(e => s"line $line: $e").filterOrElse(_ != TxKind.Transfer, s"line $line: transfers can't be imported")

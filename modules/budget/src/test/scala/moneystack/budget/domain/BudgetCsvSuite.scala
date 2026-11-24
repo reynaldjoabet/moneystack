@@ -41,4 +41,29 @@ class BudgetCsvSuite extends munit.FunSuite {
     assert(out.contains("12.34"))
     assert(out.contains("\"Lunch, with \"\"Ann\"\"\""))
   }
+
+  test("amounts as banks export them") {
+    val cases = List(
+      "1234.56"     -> Some("1234.56"),
+      "-12"         -> Some("-12"),
+      "+12"         -> Some("12"),
+      "(1,234.56)"  -> Some("-1234.56"),
+      "1234.56 DR"  -> Some("-1234.56"),
+      "1234.56 CR"  -> Some("1234.56"),
+      "50.00dr."    -> Some("-50.00"),
+      "-5.00 DR"    -> None,         // a sign and DR contradict each other
+      "€1.234,56"   -> Some("1234.56"),
+      "$-5.00"      -> Some("-5.00"),
+      "\u221242.10" -> Some("-42.10"),
+      "1 234,5"     -> Some("1234.5"),
+      "3,250,000"   -> Some("3250000"),
+      "1.500.000"   -> Some("1500000"),
+      "1,234"       -> Some("1234"), // as this importer always read it
+      "12,5"        -> Some("12.5"),
+      "1,23,456"    -> None,
+      "12abc"       -> None,
+      ""            -> None
+    )
+    cases.foreach { case (in, out) => assertEquals(BudgetCsv.amount(in), out.map(BigDecimal(_)), in) }
+  }
 }
