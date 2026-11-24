@@ -42,6 +42,9 @@ final class Loader[F[_]: Async](wallets: Wallets[F], catalog: Catalog[F], transa
   /** The days `user` recorded anything in a wallet they can see. */
   def loggedDays(user: UserId): F[Set[LocalDate]] = walletsOf(user).flatMap(ws => transactions.loggedDays(ws.map(_.id), user))
 
+  /** The tags `user` made. */
+  def tags(user: UserId): F[List[Tag]] = catalog.tags(user)
+
   /** As [[load]], without transactions. */
   def reference(user: UserId): F[Snapshot] = walletsOf(user).flatMap(snapshot(user, _, Nil))
 

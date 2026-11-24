@@ -20,7 +20,8 @@ final case class Entry(
     categoryId: Option[CategoryId],
     payeeId: Option[PayeeId],
     amountMinor: Long,
-    excludedBudgets: List[BudgetId]
+    excludedBudgets: List[BudgetId],
+    tags: List[TagId] = Nil
 )
 
 final case class Summary(
@@ -104,8 +105,22 @@ final case class BudgetStatus(
     dailyAllowanceMinor: Long,
     projectedMinor: Long,
     over: Boolean,
-    categories: List[LimitStatus]
+    categories: List[LimitStatus],
+    note: Option[String] = None,
+    rolloverReset: Boolean = false,
+    pace: Option[Pace] = None
 )
+
+/**
+ * Where spending would usually be by today in the current period. `expectedMinor` is the share of the available
+ * amount that past periods had spent by the same point (`source` = history, the median of up to 3 periods with
+ * spending), or the share of days elapsed without that history (`source` = even). `aheadMinor` is how far spending
+ * runs ahead of it.
+ */
+final case class Pace(source: String, expectedPct: BigDecimal, expectedMinor: Long, aheadMinor: Long, ahead: Boolean)
+
+/** Spending under one tag; a transaction with several of the asked tags counts under each. */
+final case class TagTotal(tagId: TagId, name: String, amountMinor: Long, pctOfTags: BigDecimal, pctOfIncome: Option[BigDecimal])
 
 /** For goals `amountMinor` is saved; for loans it is outstanding. */
 final case class ObjectiveProgress(
@@ -136,7 +151,9 @@ object Reports {
       currency: CurrencyCode
   ): Either[BudgetError, List[Entry]] = {
     val byId = txs.map(t => t.id -> t).toMap
-    txs.filter(_.kind != TxKind.Transfer).foldLeft[Either[BudgetError, List[Entry]]](Right(Nil)) { (acc, t) =>
+    // A refund of an excluded purchase is left out too, so the category's spending can't go negative.
+    def excluded(t: Transaction) = t.excludeFromStats || t.refundOf.flatMap(byId.get).exists(_.excludeFromStats)
+    txs.filter(t => t.kind != TxKind.Transfer && !excluded(t)).foldLeft[Either[BudgetError, List[Entry]]](Right(Nil)) { (acc, t) =>
       val ccy           = wallets.get(t.walletId).map(_.currency).getOrElse(currency)
       def conv(x: Long) = convert(fx, x, ccy, currency, t.date)
       acc.flatMap { list =>
@@ -151,7 +168,8 @@ object Reports {
                 t.categoryId.orElse(byId.get(orig).flatMap(_.categoryId)),
                 t.payeeId,
                 a,
-                t.excludedBudgets
+                t.excludedBudgets,
+                t.tags
               ) :: list
             )
           case (kind, _) =>
@@ -159,7 +177,7 @@ object Reports {
             val parts =
               if (t.splits.nonEmpty) t.splits.map(s => (Option(s.categoryId), s.amountMinor)) else List((t.categoryId, t.amountMinor))
             parts.foldLeft[Either[BudgetError, List[Entry]]](Right(list)) { case (l, (cat, amt)) =>
-              l.flatMap(xs => conv(amt).map(a => Entry(t.id, t.date, t.walletId, ck, cat, t.payeeId, a, t.excludedBudgets) :: xs))
+              l.flatMap(xs => conv(amt).map(a => Entry(t.id, t.date, t.walletId, ck, cat, t.payeeId, a, t.excludedBudgets, t.tags) :: xs))
             }
         }
       }
@@ -333,10 +351,22 @@ object Reports {
     }
   }
 
-  def status(b: Budget, es: List[Entry], categories: List[Category], asOf: LocalDate): Option[BudgetStatus] =
+  /**
+   * The budget's period containing `asOf`. `marks` are what the user set on its periods, by first day: a reset
+   * period starts without the previous one's rollover. `es` must cover up to 3 periods before for the pace.
+   */
+  def status(
+      b: Budget,
+      es: List[Entry],
+      categories: List[Category],
+      asOf: LocalDate,
+      marks: Map[LocalDate, BudgetPeriodMark] = Map.empty
+  ): Option[BudgetStatus] =
     Periods.periodOf(b, asOf).map { p =>
+      val mark     = marks.get(p.from)
+      val reset    = mark.exists(_.rolloverReset)
       val spent    = counted(b, es, p, categories).map(_.amountMinor).sum
-      val rollover = if (!b.rollover) 0L
+      val rollover = if (!b.rollover || reset) 0L
       else Periods.previous(b, p).fold(0L)(prev =>
         (b.amountMinor - counted(b, es, prev, categories).map(_.amountMinor).sum).max(0L)
       )
@@ -367,9 +397,73 @@ object Reports {
         if (daysLeft > 0) (remaining.max(0L)) / daysLeft else 0L,
         minor(BigDecimal(spent) / elapsed * p.days),
         spent > available,
-        catRows
+        catRows,
+        mark.flatMap(_.note),
+        reset,
+        pace(b, es, categories, p, asOf, available, spent)
       )
     }
+
+  /** How many of the period's days have passed, today included, as a share of all of them. */
+  private def elapsedShare(p: Period, asOf: LocalDate): BigDecimal =
+    BigDecimal((ChronoUnit.DAYS.between(p.from, asOf) + 1).max(0L).min(p.days)) / p.days
+
+  /** Past periods whose spending can set the usual pace. */
+  val PaceHistory = 3
+
+  /** See [[Pace]]. Only for the period containing `asOf`, with something available to spend. */
+  def pace(b: Budget, es: List[Entry], categories: List[Category], p: Period, asOf: LocalDate, available: Long, spent: Long): Option[Pace] =
+    Option.when(p.contains(asOf) && available > 0) {
+      val share   = elapsedShare(p, asOf)
+      val earlier = Iterator.iterate(Periods.previous(b, p))(_.flatMap(Periods.previous(b, _))).takeWhile(_.isDefined).flatten
+        .take(PaceHistory).toList
+      val shares = earlier.flatMap { q =>
+        val in    = counted(b, es, q, categories)
+        val total = in.map(_.amountMinor).sum
+        Option.when(total > 0) {
+          // The same share of q's days; the small epsilon keeps rounding from counting a whole extra day.
+          val throughDay = (share * q.days - BigDecimal("1e-9")).setScale(0, RoundingMode.CEILING).toLong
+          val byThen     = in.filter(e => ChronoUnit.DAYS.between(q.from, e.date) < throughDay).map(_.amountMinor).sum
+          (BigDecimal(byThen) / total).max(0).min(1)
+        }
+      }
+      val (source, expected) =
+        if (shares.size >= 2) ("history", median(shares)) else ("even", share)
+      val expectedMinor = minor(expected * available)
+      Pace(
+        source,
+        (expected * 100).setScale(2, RoundingMode.HALF_EVEN),
+        expectedMinor,
+        (spent - expectedMinor).max(0L),
+        spent > expectedMinor
+      )
+    }
+
+  private def median(xs: List[BigDecimal]): BigDecimal = {
+    val s = xs.sorted
+    if (s.size % 2 == 1) s(s.size / 2) else (s(s.size / 2 - 1) + s(s.size / 2)) / 2
+  }
+
+  /**
+   * Spending in `p` under each of `tags`, as a share of those tags' spending and of income. A refund lowers its
+   * tag's total; a transaction tagged with several of `tags` counts under each.
+   */
+  def byTag(es: List[Entry], p: Period, tags: List[Tag]): List[TagTotal] = {
+    val in       = within(es, p)
+    val income   = in.filter(_.kind == CategoryKind.Income).map(_.amountMinor).sum
+    val spending = in.filter(_.kind == CategoryKind.Expense)
+    val totals   = tags.map(t => t -> spending.filter(_.tags.contains(t.id)).map(_.amountMinor).sum)
+    val all      = totals.map(_._2).sum
+    totals.map { case (t, amt) =>
+      TagTotal(
+        t.id,
+        t.name.value,
+        amt,
+        pct(BigDecimal(amt), BigDecimal(all)),
+        Option.when(income > 0)(pct(BigDecimal(amt), BigDecimal(income)))
+      )
+    }.sortBy(-_.amountMinor)
+  }
 
   /** Past periods (most recent first) with what was counted in each, for history charts. */
   def history(b: Budget, es: List[Entry], categories: List[Category], asOf: LocalDate, periods: Int): List[(Period, Long)] =

@@ -405,6 +405,63 @@ class BudgetIntegrationSuite extends moneystack.testkit.PostgresSuite[BudgetModu
     }
   }
 
+  test("excluding from stats: in bulk, only by the owner, kept by edits; period notes, rollover resets and tags") {
+    val (me, friend) = (newUser, newUser)
+    val march        = Period(d(3, 1), d(3, 31))
+    for {
+      w    <- wallet(me, "Checking")
+      food <- category(me, "Groceries")
+      trip <- money.createTag(me, t("Trip"))
+      _    <- ok(money.shareWallet(me, w.id, friend))
+      sold <- ok(money.addTransaction(me, txn(w, TxKind.Income, 900_000, d(3, 2), "Sold the car")))
+      shop <-
+        ok(money.addTransaction(me, txn(w, TxKind.Expense, 4_000, d(3, 3), "Shop", cat = Some(food.id)).copy(tags = Some(List(trip.id)))))
+      _        <- ok(money.addTransaction(me, txn(w, TxKind.Expense, 1_000, d(3, 4), "Lunch", cat = Some(food.id))))
+      byFriend <- ok(money.setExcludeFromStats(friend, List(sold.id), excluded = true))
+      byMe     <- ok(money.setExcludeFromStats(me, List(sold.id), excluded = true))
+      // An edit that doesn't mention the flag keeps it.
+      _      <- ok(money.updateTransaction(me, sold.id, txn(w, TxKind.Income, 900_000, d(3, 2), "Sold the old car")))
+      sum    <- ok(env.insights.summary(me, march, usd, None))
+      bal    <- ok(env.insights.balances(me, d(3, 31), usd))
+      tags   <- ok(env.insights.tags(me, march, Nil, usd))
+      budget <- ok(plans.createBudget(
+        me,
+        PlanService.NewBudget(
+          t("Food"),
+          30_000,
+          usd,
+          Recurrence.Monthly,
+          None,
+          d(1, 1),
+          None,
+          None,
+          Some(List(food.id)),
+          None,
+          None,
+          Some(true),
+          None,
+          None
+        )
+      ))
+      badStart <- plans.setPeriodNote(me, budget.id, d(3, 2), Some("not a period start"))
+      _        <- ok(plans.setPeriodNote(me, budget.id, d(3, 1), Some("Holiday month")))
+      _        <- ok(plans.setRolloverReset(me, budget.id, d(3, 1), reset = true))
+      _        <- ok(plans.setPeriodNote(me, budget.id, d(3, 1), Some("  Holiday month, edited  ")))
+      notMine  <- plans.setPeriodNote(friend, budget.id, d(3, 1), Some("x"))
+      views    <- ok(plans.budgets(me, d(3, 15)))
+    } yield {
+      assertEquals((byFriend, byMe), (0, 1), "a shared wallet is read-only to the friend")
+      assertEquals((sum.incomeMinor, sum.expenseMinor), (0L, 5_000L), "the sale is out of reports")
+      assertEquals(bal.netWorthMinor, 900_000L - 5_000, "but still in the balance")
+      assertEquals(tags.map(t => t.name -> t.amountMinor), List("Trip" -> shop.amountMinor))
+      assert(badStart.isLeft)
+      assert(notMine.isLeft)
+      val st = views.find(_.budget.id == budget.id).get.status.get
+      assertEquals((st.note, st.rolloverReset, st.rolloverMinor), (Some("Holiday month, edited"), true, 0L), "the note kept the reset")
+      assert(st.pace.isDefined)
+    }
+  }
+
   test("a wallet with more transactions than Postgres allows bind parameters still loads") {
     val owner = newUser
     for {

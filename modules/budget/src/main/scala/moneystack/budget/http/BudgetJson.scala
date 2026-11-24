@@ -42,7 +42,10 @@ object BudgetJson {
   given Encoder[Budget]                       = deriveEncoder
   given Encoder[Period]                       = deriveEncoder
   given Encoder[LimitStatus]                  = deriveEncoder
+  given Encoder[Pace]                         = deriveEncoder
   given Encoder[BudgetStatus]                 = deriveEncoder
+  given Encoder[BudgetPeriodMark]             = deriveEncoder
+  given Encoder[TagTotal]                     = deriveEncoder
   given Encoder[PlanService.BudgetView]       = deriveEncoder
   given Encoder[PlanService.PeriodSpend]      = deriveEncoder
   given Encoder[Schedule]                     = deriveEncoder
@@ -73,6 +76,15 @@ object BudgetJson {
   given Decoder[PlanService.NewBudget]       = deriveDecoder
   given Decoder[PlanService.NewSchedule]     = deriveDecoder
   given Decoder[PlanService.NewObjective]    = deriveDecoder
+
+  final case class ExcludeFromStatsBody(ids: List[TransactionId], excluded: Boolean)
+  given Decoder[ExcludeFromStatsBody] = deriveDecoder
+
+  final case class PeriodNoteBody(note: Option[String])
+  given Decoder[PeriodNoteBody] = deriveDecoder
+
+  final case class RolloverResetBody(reset: Boolean)
+  given Decoder[RolloverResetBody] = deriveDecoder
 
   final case class ArchiveBody(archived: Boolean)
   given Decoder[ArchiveBody] = deriveDecoder

@@ -114,8 +114,13 @@ final case class Transaction(
     excludedBudgets: List[BudgetId],
     importKey: Option[String],
     createdBy: UserId,
-    createdAt: Instant
+    createdAt: Instant,
+    /** Left out of reports and budgets, still counted in balances. */
+    excludeFromStats: Boolean = false
 )
+
+/** What a user set on one period of a budget, keyed by the period's first day. */
+final case class BudgetPeriodMark(budgetId: BudgetId, periodStart: LocalDate, note: Option[String], rolloverReset: Boolean)
 
 // ---------- Budgets ----------
 

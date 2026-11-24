@@ -36,6 +36,9 @@ trait Transactions[F[_]] {
   /** As [[moved]], per day, for every day up to `asOf` on which something moved. */
   def movedByDay(wallets: List[WalletId], asOf: LocalDate): F[List[(WalletId, LocalDate, Long)]]
 
+  /** Sets `exclude_from_stats` on those of `ids` that are in `wallets`; answers how many changed. */
+  def setExcludeFromStats(ids: List[TransactionId], wallets: List[WalletId], excluded: Boolean): F[Int]
+
   /** The days on which `user` recorded a transaction touching `wallets`. */
   def loggedDays(wallets: List[WalletId], user: UserId): F[Set[LocalDate]]
 
@@ -46,7 +49,7 @@ trait Transactions[F[_]] {
 object Transactions {
 
   import Codecs.{split as splitC, transaction as txC, transactionId as txIdC, userId as userIdC, walletId as walletIdC}
-  import skunk.codec.all.{date, int4, int8, varchar}
+  import skunk.codec.all.{bool, date, int4, int8, varchar}
 
   def make[F[_]: Concurrent](pool: Resource[F, Session[F]]): Transactions[F] = new Transactions[F] {
 
@@ -122,6 +125,13 @@ object Transactions {
       if (wallets.isEmpty) Concurrent[F].pure(Nil)
       else pool.use(_.prepare(Q.movedByDay(wallets.size)).flatMap(_.stream((wallets, asOf, wallets, asOf), 1024).compile.toList))
 
+    def setExcludeFromStats(ids: List[TransactionId], wallets: List[WalletId], excluded: Boolean): F[Int] =
+      if (ids.isEmpty || wallets.isEmpty) Concurrent[F].pure(0)
+      else pool.use(_.prepare(Q.setExcludeFromStats(ids.size, wallets.size)).flatMap(_.execute((excluded, ids, wallets)))).map {
+        case skunk.data.Completion.Update(n) => n
+        case _                               => 0
+      }
+
     def loggedDays(wallets: List[WalletId], user: UserId): F[Set[LocalDate]] =
       if (wallets.isEmpty) Concurrent[F].pure(Set.empty)
       else pool.use(_.prepare(Q.loggedDays(wallets.size)).flatMap(_.stream((user, (wallets, wallets)), 1024).compile.to(Set)))
@@ -135,7 +145,7 @@ object Transactions {
     private val cols =
       sql"""id, owner_id, wallet_id, kind, amount_minor, tx_date, title, note, category_id, category_source, payee_id, tags,
             to_wallet_id, to_amount_minor, refund_of, objective_id, schedule_id, due_date, excluded_budgets, import_key,
-            created_by, created_at"""
+            created_by, created_at, exclude_from_stats"""
 
     val insert: Command[Transaction] = sql"INSERT INTO budget.transactions ($cols) VALUES ${txC.values}".command
 
@@ -185,6 +195,10 @@ object Transactions {
               SELECT to_wallet_id, tx_date, coalesce(to_amount_minor, amount_minor)
               FROM budget.transactions WHERE to_wallet_id IN (${walletIdC.list(n)}) AND tx_date <= $date
             ) AS movements GROUP BY wallet, day""".query(walletIdC *: date *: int8)
+
+    def setExcludeFromStats(ids: Int, wallets: Int): Command[(Boolean, List[TransactionId], List[WalletId])] =
+      sql"""UPDATE budget.transactions SET exclude_from_stats = $bool
+            WHERE id IN (${txIdC.list(ids)}) AND wallet_id IN (${walletIdC.list(wallets)})""".command
 
     def loggedDays(n: Int): Query[(UserId, (List[WalletId], List[WalletId])), LocalDate] =
       sql"SELECT DISTINCT t.tx_date FROM budget.transactions t WHERE t.created_by = $userIdC AND ${touching(n)}".query(date)

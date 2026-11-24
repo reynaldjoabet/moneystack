@@ -41,6 +41,9 @@ trait MoneyService[F[_]] {
   def updateTransaction(owner: UserId, id: TransactionId, b: MoneyService.NewTransaction): F[Either[BudgetError, Transaction]]
   def deleteTransaction(owner: UserId, id: TransactionId): F[Either[BudgetError, Unit]]
 
+  /** Excludes `ids` from reports and budgets, or brings them back; only those in `owner`'s wallets. Answers how many. */
+  def setExcludeFromStats(owner: UserId, ids: List[TransactionId], excluded: Boolean): F[Either[BudgetError, Int]]
+
   def rules(owner: UserId): F[List[Rule]]
   def createRule(owner: UserId, b: MoneyService.NewRule): F[Either[BudgetError, Rule]]
   def deleteRule(owner: UserId, id: RuleId): F[Either[BudgetError, Unit]]
@@ -87,8 +90,13 @@ object MoneyService {
       toAmountMinor: Option[Long],
       refundOf: Option[TransactionId],
       objectiveId: Option[ObjectiveId],
-      excludedBudgets: Option[List[BudgetId]]
+      excludedBudgets: Option[List[BudgetId]],
+      /** Left out of reports and budgets. On an update, left as it was when absent. */
+      excludeFromStats: Option[Boolean] = None
   )
+
+  /** How many transactions one bulk change may touch. */
+  val MaxBulk = 1000
 
   final case class Filter(
       wallet: Option[WalletId],
@@ -343,7 +351,8 @@ object MoneyService {
             b.excludedBudgets.getOrElse(Nil).distinct,
             existingKey,
             owner,
-            createdAt
+            createdAt,
+            b.excludeFromStats.getOrElse(false)
           )
           Rules.run(rules, draft)._1
         }
@@ -366,10 +375,24 @@ object MoneyService {
           old <- findOwned(owner, id)
           t   <- prepare(owner, id, b, old.createdAt, old.importKey)
           out <- EitherT.fromOptionF(
-            txRepo.replace(t.copy(scheduleId = old.scheduleId, dueDate = old.dueDate)),
+            txRepo.replace(
+              t.copy(
+                scheduleId = old.scheduleId,
+                dueDate = old.dueDate,
+                excludeFromStats = b.excludeFromStats.getOrElse(old.excludeFromStats)
+              )
+            ),
             BudgetError.TransactionNotFound(id): BudgetError
           )
         } yield out).value
+
+      def setExcludeFromStats(owner: UserId, ids: List[TransactionId], excluded: Boolean): F[Either[BudgetError, Int]] =
+        (for {
+          _  <- check(ids.nonEmpty, BudgetError.Invalid("ids must not be empty"))
+          _  <- check(ids.distinct.size <= MaxBulk, BudgetError.Invalid(s"at most $MaxBulk transactions at once"))
+          ws <- lift(walletRepo.owned(owner))
+          n  <- lift(txRepo.setExcludeFromStats(ids.distinct, ws.map(_.id), excluded))
+        } yield n).value
 
       def deleteTransaction(owner: UserId, id: TransactionId): F[Either[BudgetError, Unit]] =
         (for {

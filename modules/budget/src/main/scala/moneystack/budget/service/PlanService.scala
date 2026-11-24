@@ -25,6 +25,12 @@ trait PlanService[F[_]] {
   def budgets(owner: UserId, asOf: LocalDate): F[Either[BudgetError, List[PlanService.BudgetView]]]
   def budgetHistory(owner: UserId, id: BudgetId, asOf: LocalDate, periods: Int): F[Either[BudgetError, List[PlanService.PeriodSpend]]]
 
+  /** `start` must be the first day of one of the budget's periods. `None` clears the note. */
+  def setPeriodNote(owner: UserId, id: BudgetId, start: LocalDate, note: Option[String]): F[Either[BudgetError, BudgetPeriodMark]]
+
+  /** With `reset`, that period starts without the previous one's rollover. */
+  def setRolloverReset(owner: UserId, id: BudgetId, start: LocalDate, reset: Boolean): F[Either[BudgetError, BudgetPeriodMark]]
+
   def createSchedule(owner: UserId, b: PlanService.NewSchedule): F[Either[BudgetError, Schedule]]
   def setScheduleActive(owner: UserId, id: ScheduleId, active: Boolean): F[Option[Schedule]]
   def schedules(owner: UserId): F[List[PlanService.ScheduleView]]
@@ -169,17 +175,45 @@ object PlanService {
         plans.deleteBudget(owner, id).map(found => Either.cond(found, (), BudgetError.BudgetNotFound(id)))
 
       def budgets(owner: UserId, asOf: LocalDate): F[Either[BudgetError, List[BudgetView]]] =
-        plans.budgets(owner).map(_.filterNot(_.archived)).flatMap { bs =>
-          // A budget reads its current period and, for rollover, the one before.
-          val periods =
-            bs.flatMap(b => Periods.periodOf(b, asOf).toList.flatMap(p => p :: (if (b.rollover) Periods.previous(b, p).toList else Nil)))
-          val span = Option.when(periods.nonEmpty)(Period(periods.map(_.from).min, periods.map(_.to).max))
+        (plans.budgets(owner).map(_.filterNot(_.archived)), plans.periodMarks(owner)).tupled.flatMap { (bs, marks) =>
+          // A budget reads its current period and the ones before it: one for rollover, up to 3 for the usual pace.
+          val periods = bs.flatMap(b =>
+            Periods.periodOf(b, asOf).toList.flatMap(p =>
+              Iterator.iterate(Option(p))(_.flatMap(Periods.previous(b, _))).takeWhile(_.isDefined).flatten.take(1 + Reports.PaceHistory)
+            )
+          )
+          val span    = Option.when(periods.nonEmpty)(Period(periods.map(_.from).min, periods.map(_.to).max))
+          val byStart = marks.groupBy(_.budgetId).view.mapValues(_.map(m => m.periodStart -> m).toMap).toMap
           span.fold(loader.reference(owner))(loader.within(owner, _)).map { snap =>
             bs.map(_.currency).distinct.traverse(c => snap.entries(c).map(c -> _)).map(_.toMap).map { byCurrency =>
-              bs.map(b => BudgetView(b, Reports.status(b, byCurrency(b.currency), snap.categories, asOf)))
+              bs.map(b =>
+                BudgetView(b, Reports.status(b, byCurrency(b.currency), snap.categories, asOf, byStart.getOrElse(b.id, Map.empty)))
+              )
             }
           }
         }
+
+      /** The budget, if `owner` has it and `start` begins one of its periods. */
+      private def periodOf(owner: UserId, id: BudgetId, start: LocalDate): R[Budget] =
+        for {
+          b <- EitherT.fromOptionF(plans.budgets(owner).map(_.find(_.id == id)), BudgetError.BudgetNotFound(id): BudgetError)
+          _ <-
+            check(Periods.periodOf(b, start).exists(_.from == start), BudgetError.Invalid(s"$start doesn't start a period of this budget"))
+        } yield b
+
+      def setPeriodNote(owner: UserId, id: BudgetId, start: LocalDate, note: Option[String]): F[Either[BudgetError, BudgetPeriodMark]] =
+        (for {
+          _ <- periodOf(owner, id, start)
+          text = note.map(_.trim).filter(_.nonEmpty)
+          _ <- check(text.forall(_.length <= 2000), BudgetError.Invalid("a note is at most 2000 characters"))
+          m <- lift(plans.setPeriodNote(id, start, text))
+        } yield m).value
+
+      def setRolloverReset(owner: UserId, id: BudgetId, start: LocalDate, reset: Boolean): F[Either[BudgetError, BudgetPeriodMark]] =
+        (for {
+          _ <- periodOf(owner, id, start)
+          m <- lift(plans.setRolloverReset(id, start, reset))
+        } yield m).value
 
       def budgetHistory(owner: UserId, id: BudgetId, asOf: LocalDate, periods: Int): F[Either[BudgetError, List[PeriodSpend]]] =
         (plans.budgets(owner), loader.load(owner)).tupled.map { case (bs, snap) =>

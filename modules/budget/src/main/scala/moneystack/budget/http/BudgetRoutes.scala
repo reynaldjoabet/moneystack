@@ -37,6 +37,7 @@ final class BudgetRoutes[F[_]: Async](
 
   private given QueryParamDecoder[WalletId]     = uuidParam("wallet id", WalletId.assume)
   private given QueryParamDecoder[CategoryId]   = uuidParam("category id", CategoryId.assume)
+  private given QueryParamDecoder[TagId]        = uuidParam("tag id", TagId.assume)
   private given QueryParamDecoder[CurrencyCode] =
     QueryParamDecoder[String].emap(s => CurrencyCode.either(s.toUpperCase).leftMap(ParseFailure(_, s)))
   private given QueryParamDecoder[CategoryKind] = enumParam(CategoryKind.parse)
@@ -46,7 +47,14 @@ final class BudgetRoutes[F[_]: Async](
       Either.catchNonFatal(YearMonth.parse(s)).leftMap(_ => ParseFailure(s"invalid month: $s (expected YYYY-MM)", s))
     )
 
-  private object WalletParam   extends OptionalMultiQueryParamDecoderMatcher[WalletId]("wallet")
+  private object WalletParam extends OptionalMultiQueryParamDecoderMatcher[WalletId]("wallet")
+
+  /** A `yyyy-mm-dd` path segment. */
+  private object DateVar {
+    def unapply(s: String): Option[LocalDate] = scala.util.Try(LocalDate.parse(s)).toOption
+  }
+
+  private object TagParam      extends OptionalMultiQueryParamDecoderMatcher[TagId]("tag")
   private object CategoryParam extends OptionalValidatingQueryParamDecoderMatcher[CategoryId]("category")
   private object SearchParam   extends OptionalQueryParamDecoderMatcher[String]("q")
   private object CurrencyParam extends OptionalValidatingQueryParamDecoderMatcher[CurrencyCode]("currency")
@@ -176,6 +184,14 @@ final class BudgetRoutes[F[_]: Async](
     case req @ PUT -> Root / "budget" / "transactions" / TransactionIdVar(id) =>
       authed(req)(u => decoded[MoneyService.NewTransaction](req)(b => money.updateTransaction(u, id, b).flatMap(respond(_)(Ok(_)))))
 
+    // Bulk: excludes the listed transactions from reports and budgets, or brings them back.
+    case req @ POST -> Root / "budget" / "transactions" / "exclude-from-stats" =>
+      authed(req)(u =>
+        decoded[BudgetJson.ExcludeFromStatsBody](req)(b =>
+          money.setExcludeFromStats(u, b.ids, b.excluded).flatMap(respond(_)(n => Ok(Map("updated" -> n).asJson)))
+        )
+      )
+
     case req @ DELETE -> Root / "budget" / "transactions" / TransactionIdVar(id) =>
       authed(req)(u => money.deleteTransaction(u, id).flatMap(respond(_)(_ => NoContent())))
 
@@ -206,6 +222,14 @@ final class BudgetRoutes[F[_]: Async](
 
     case req @ DELETE -> Root / "budget" / "budgets" / BudgetIdVar(id) =>
       authed(req)(u => plans.deleteBudget(u, id).flatMap(respond(_)(_ => NoContent())))
+
+    case req @ PUT -> Root / "budget" / "budgets" / BudgetIdVar(id) / "periods" / DateVar(start) / "note" =>
+      authed(req)(u => decoded[BudgetJson.PeriodNoteBody](req)(b => plans.setPeriodNote(u, id, start, b.note).flatMap(respond(_)(Ok(_)))))
+
+    case req @ PUT -> Root / "budget" / "budgets" / BudgetIdVar(id) / "periods" / DateVar(start) / "rollover-reset" =>
+      authed(req)(u =>
+        decoded[BudgetJson.RolloverResetBody](req)(b => plans.setRolloverReset(u, id, start, b.reset).flatMap(respond(_)(Ok(_))))
+      )
 
     case req @ GET -> Root / "budget" / "budgets" / BudgetIdVar(id) / "history" :? AsOf(d) +& PeriodsParam(n) =>
       authed(req)(u => asOf(d)(day => plans.budgetHistory(u, id, day, n.getOrElse(6)).flatMap(respond(_)(Ok(_)))))
@@ -296,6 +320,17 @@ final class BudgetRoutes[F[_]: Async](
 
     case req @ GET -> Root / "budget" / "insights" / "streak" =>
       authed(req)(u => today.flatMap(t => insights.streak(u, t).flatMap(Ok(_))))
+
+    case req @ GET -> Root / "budget" / "insights" / "tags" :? From(from) +& To(to) +& CurrencyParam(c) +& TagParam(tg) =>
+      authed(req)(u =>
+        tg.fold(
+          e => bad(e.head.sanitized),
+          tags =>
+            scoped(from, to, c, cats.data.Validated.validNel[ParseFailure, List[WalletId]](Nil))((p, ccy, _) =>
+              insights.tags(u, p, tags, ccy).flatMap(respond(_)(Ok(_)))
+            )
+        )
+      )
 
     case req @ GET -> Root / "budget" / "insights" / "recap" :? MonthParam(m) +& CurrencyParam(c) =>
       authed(req)(u =>

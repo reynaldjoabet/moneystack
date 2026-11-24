@@ -61,8 +61,8 @@ object Codecs {
   val transaction: Codec[Transaction] =
     (transactionId *: userId *: walletId *: txKind *: int8 *: date *: title *: body.opt *: categoryId.opt *: categorySource *:
       payeeId.opt *: tagIds *: walletId.opt *: int8.opt *: transactionId.opt *: objectiveId.opt *: scheduleId.opt *: date.opt *:
-      budgetIds *: varchar(64).opt *: userId *: instant).imap {
-      case (id, owner, wallet, kind, amt, d, t, note, cat, src, payee, tags, to, toAmt, refund, obj, sched, due, excl, key, by, at) =>
+      budgetIds *: varchar(64).opt *: userId *: instant *: bool).imap {
+      case (id, owner, wallet, kind, amt, d, t, note, cat, src, payee, tags, to, toAmt, refund, obj, sched, due, excl, key, by, at, out) =>
         Transaction(
           id,
           owner,
@@ -86,7 +86,8 @@ object Codecs {
           excl,
           key,
           by,
-          at
+          at,
+          out
         )
     }(t =>
       (
@@ -111,9 +112,12 @@ object Codecs {
         t.excludedBudgets,
         t.importKey,
         t.createdBy,
-        t.createdAt
+        t.createdAt,
+        t.excludeFromStats
       )
     )
+
+  val periodMark: Codec[BudgetPeriodMark] = (budgetId *: date *: varchar(2000).opt *: bool).to[BudgetPeriodMark]
 
   val split: Codec[Split] = (categoryId *: int8 *: body.opt).to[Split]
 

@@ -8,11 +8,20 @@ import cats.syntax.all.*
 import skunk.{Command, Query, Session}
 import skunk.implicits.*
 
+import java.time.LocalDate
+
 /** Budgets (with category limits), schedules, objectives and automation rules, per owner. */
 trait Plans[F[_]] {
   def createBudget(b: Budget): F[Budget]
   def budgets(owner: UserId): F[List[Budget]]
   def deleteBudget(owner: UserId, id: BudgetId): F[Boolean]
+
+  /** Notes and rollover resets of `owner`'s budgets. */
+  def periodMarks(owner: UserId): F[List[BudgetPeriodMark]]
+
+  /** Sets the note, keeping the rollover reset, or the reset, keeping the note. */
+  def setPeriodNote(budget: BudgetId, start: LocalDate, note: Option[String]): F[BudgetPeriodMark]
+  def setRolloverReset(budget: BudgetId, start: LocalDate, reset: Boolean): F[BudgetPeriodMark]
 
   def createSchedule(s: Schedule): F[Schedule]
   def schedules(owner: UserId): F[List[Schedule]]
@@ -34,10 +43,11 @@ trait Plans[F[_]] {
 object Plans {
 
   import Codecs.{
+    periodMark as periodMarkC,
     budget as budgetC, budgetId as budgetIdC, limit as limitC, objective as objectiveC, objectiveId as objectiveIdC,
     rule as ruleC, ruleId as ruleIdC, schedule as scheduleC, scheduleId as scheduleIdC, userId as userIdC
   }
-  import skunk.codec.all.{bool, int4, int8}
+  import skunk.codec.all.{bool, date, int4, int8, varchar}
 
   private def deleted(c: skunk.data.Completion) = c match {
     case skunk.data.Completion.Delete(n) => n > 0
@@ -64,6 +74,15 @@ object Plans {
 
     def deleteBudget(owner: UserId, id: BudgetId): F[Boolean] =
       pool.use(_.prepare(Q.deleteBudget).flatMap(_.execute((id, owner)))).map(deleted)
+
+    def periodMarks(owner: UserId): F[List[BudgetPeriodMark]] =
+      pool.use(_.prepare(Q.periodMarks).flatMap(_.stream(owner, 256).compile.toList))
+
+    def setPeriodNote(budget: BudgetId, start: LocalDate, note: Option[String]): F[BudgetPeriodMark] =
+      pool.use(_.prepare(Q.setPeriodNote).flatMap(_.unique((budget, start, note))))
+
+    def setRolloverReset(budget: BudgetId, start: LocalDate, reset: Boolean): F[BudgetPeriodMark] =
+      pool.use(_.prepare(Q.setRolloverReset).flatMap(_.unique((budget, start, reset))))
 
     def createSchedule(s: Schedule): F[Schedule] = pool.use(_.prepare(Q.insertSchedule).flatMap(_.unique(s)))
 
@@ -112,6 +131,21 @@ object Plans {
     val limits: Query[UserId, (BudgetId, CategoryLimit)] =
       sql"""SELECT l.budget_id, l.category_id, l.amount_minor FROM budget.category_limits l
             JOIN budget.budgets b ON b.id = l.budget_id WHERE b.owner_id = $userIdC""".query(budgetIdC *: limitC)
+
+    private val markCols = sql"budget_id, period_start, note, rollover_reset"
+
+    val periodMarks: Query[UserId, BudgetPeriodMark] =
+      sql"""SELECT p.budget_id, p.period_start, p.note, p.rollover_reset FROM budget.budget_periods p
+            JOIN budget.budgets b ON b.id = p.budget_id WHERE b.owner_id = $userIdC""".query(periodMarkC)
+
+    val setPeriodNote: Query[(BudgetId, LocalDate, Option[String]), BudgetPeriodMark] =
+      sql"""INSERT INTO budget.budget_periods (budget_id, period_start, note) VALUES ($budgetIdC, $date, ${varchar(2000).opt})
+            ON CONFLICT (budget_id, period_start) DO UPDATE SET note = EXCLUDED.note RETURNING $markCols""".query(periodMarkC)
+
+    val setRolloverReset: Query[(BudgetId, LocalDate, Boolean), BudgetPeriodMark] =
+      sql"""INSERT INTO budget.budget_periods (budget_id, period_start, rollover_reset) VALUES ($budgetIdC, $date, $bool)
+            ON CONFLICT (budget_id, period_start) DO UPDATE SET rollover_reset = EXCLUDED.rollover_reset
+            RETURNING $markCols""".query(periodMarkC)
 
     val deleteBudget: Command[(BudgetId, UserId)] =
       sql"DELETE FROM budget.budgets WHERE id = $budgetIdC AND owner_id = $userIdC".command

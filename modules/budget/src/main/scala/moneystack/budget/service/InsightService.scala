@@ -37,6 +37,9 @@ trait InsightService[F[_]] {
   def balanceHistory(user: UserId, period: Period, currency: CurrencyCode): F[Either[BudgetError, List[(LocalDate, Long)]]]
   def streak(user: UserId, today: LocalDate): F[Streak]
   def recap(user: UserId, month: YearMonth, currency: CurrencyCode): F[Either[BudgetError, Recap]]
+
+  /** Spending under each of `tags` (all of the user's when empty), as in [[Reports.byTag]]. */
+  def tags(user: UserId, period: Period, tags: List[TagId], currency: CurrencyCode): F[Either[BudgetError, List[TagTotal]]]
 }
 
 object InsightService {
@@ -105,6 +108,12 @@ object InsightService {
 
     def streak(user: UserId, today: LocalDate): F[Streak] =
       loader.loggedDays(user).map(Reports.streak(_, today))
+
+    def tags(user: UserId, period: Period, tags: List[TagId], currency: CurrencyCode): F[Either[BudgetError, List[TagTotal]]] =
+      (loader.tags(user), entries(user, period, currency, None)).tupled.map { (owned, es) =>
+        val chosen = if (tags.isEmpty) owned else owned.filter(t => tags.contains(t.id))
+        es.map { case (_, entries) => Reports.byTag(entries, period, chosen) }
+      }
 
     def recap(user: UserId, month: YearMonth, currency: CurrencyCode): F[Either[BudgetError, Recap]] =
       entries(user, Period(month.minusMonths(1).atDay(1), month.atEndOfMonth), currency, None)
