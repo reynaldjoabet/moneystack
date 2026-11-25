@@ -54,6 +54,9 @@ object Action {
   final case class AddTags(tagIds: List[TagId])           extends Action
   final case class SetPayee(payeeId: PayeeId)             extends Action
   final case class SetNote(mode: NoteMode, value: String) extends Action
+
+  /** Leaves the transaction out of reports and budgets, unless its author chose otherwise. */
+  case object ExcludeFromStats extends Action
 }
 
 /** Rules run in `position` order; with `matchAll` every condition must hold, otherwise any. */
@@ -94,6 +97,7 @@ object Rules {
     if (conditions.isEmpty) bad("a rule needs at least one condition")
     else if (conditions.size > MaxConditions) bad(s"at most $MaxConditions conditions")
     else if (actions.isEmpty || actions.size > MaxActions) bad(s"a rule needs 1 to $MaxActions actions")
+    else if (actions.count(_ == Action.ExcludeFromStats) > 1) bad("exclude_from_stats is given more than once")
     else conditionErrors.fold(Right(()))(bad)
   }
 
@@ -154,6 +158,7 @@ object Rules {
             case NoteMode.Prepend => if (current.isEmpty) v else s"$v $current"
           }
           t.copy(note = Body.option(next.take(8000)))
+        case Action.ExcludeFromStats => t.copy(excludeFromStats = true)
       }
     }
 

@@ -25,6 +25,9 @@ trait Catalog[F[_]] {
   def createTag(t: Tag): F[Tag]
   def tags(owner: UserId): F[List[Tag]]
 
+  /** `None` if `owner` has no such tag. */
+  def setTagTarget(owner: UserId, id: TagId, pct: Option[BigDecimal]): F[Option[Tag]]
+
   def upsertRates(rs: List[FxQuote]): F[Unit]
   def rates(): F[List[FxQuote]]
 }
@@ -33,9 +36,9 @@ object Catalog {
 
   import Codecs.{
     category as categoryC, categoryId as categoryIdC, fxQuote as fxC, payee as payeeC, payeeId as payeeIdC,
-    tag as tagC, userId as userIdC
+    tag as tagC, tagId as tagIdC, userId as userIdC
   }
-  import skunk.codec.all.bool
+  import skunk.codec.all.{bool, numeric}
 
   def make[F[_]: Concurrent](pool: Resource[F, Session[F]]): Catalog[F] = new Catalog[F] {
 
@@ -57,6 +60,9 @@ object Catalog {
     def createTag(t: Tag): F[Tag] = pool.use(_.prepare(Q.insertTag).flatMap(_.unique(t)))
 
     def tags(owner: UserId): F[List[Tag]] = pool.use(_.prepare(Q.tags).flatMap(_.stream(owner, 128).compile.toList))
+
+    def setTagTarget(owner: UserId, id: TagId, pct: Option[BigDecimal]): F[Option[Tag]] =
+      pool.use(_.prepare(Q.setTagTarget).flatMap(_.option((pct, id, owner))))
 
     def upsertRates(rs: List[FxQuote]): F[Unit] =
       pool.use(s => s.transaction.use(_ => s.prepare(Q.upsertRate).flatMap(pc => rs.traverse_(pc.execute))))
@@ -93,10 +99,15 @@ object Catalog {
             RETURNING $payeeCols""".query(payeeC).contramap[Payee](p => (p, p.id, p.ownerId))
 
     val insertTag: Query[Tag, Tag] =
-      sql"INSERT INTO budget.tags (id, owner_id, name) VALUES ${tagC.values} RETURNING id, owner_id, name".query(tagC)
+      sql"INSERT INTO budget.tags (id, owner_id, name, target_pct) VALUES ${tagC.values} RETURNING id, owner_id, name, target_pct"
+        .query(tagC)
 
     val tags: Query[UserId, Tag] =
-      sql"SELECT id, owner_id, name FROM budget.tags WHERE owner_id = $userIdC ORDER BY name".query(tagC)
+      sql"SELECT id, owner_id, name, target_pct FROM budget.tags WHERE owner_id = $userIdC ORDER BY name".query(tagC)
+
+    val setTagTarget: Query[(Option[BigDecimal], TagId, UserId), Tag] =
+      sql"""UPDATE budget.tags SET target_pct = ${numeric(5, 2).opt} WHERE id = $tagIdC AND owner_id = $userIdC
+            RETURNING id, owner_id, name, target_pct""".query(tagC)
 
     val upsertRate: Command[FxQuote] =
       sql"""INSERT INTO budget.fx_rates (from_ccy, to_ccy, rate_date, rate) VALUES ${fxC.values}

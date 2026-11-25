@@ -34,6 +34,7 @@ final class BudgetRoutes[F[_]: Async](
   private val ScheduleIdVar    = new UuidVar(ScheduleId.assume)
   private val ObjectiveIdVar   = new UuidVar(ObjectiveId.assume)
   private val UserIdVar        = new UuidVar(UserId.assume)
+  private val TagIdVar         = new UuidVar(TagId.assume)
 
   private given QueryParamDecoder[WalletId]     = uuidParam("wallet id", WalletId.assume)
   private given QueryParamDecoder[CategoryId]   = uuidParam("category id", CategoryId.assume)
@@ -54,17 +55,18 @@ final class BudgetRoutes[F[_]: Async](
     def unapply(s: String): Option[LocalDate] = scala.util.Try(LocalDate.parse(s)).toOption
   }
 
-  private object TagParam      extends OptionalMultiQueryParamDecoderMatcher[TagId]("tag")
-  private object CategoryParam extends OptionalValidatingQueryParamDecoderMatcher[CategoryId]("category")
-  private object SearchParam   extends OptionalQueryParamDecoderMatcher[String]("q")
-  private object CurrencyParam extends OptionalValidatingQueryParamDecoderMatcher[CurrencyCode]("currency")
-  private object KindParam     extends OptionalValidatingQueryParamDecoderMatcher[CategoryKind]("kind")
-  private object BucketParam   extends OptionalValidatingQueryParamDecoderMatcher[Bucket]("bucket")
-  private object MonthParam    extends OptionalValidatingQueryParamDecoderMatcher[YearMonth]("month")
-  private object DaysParam     extends OptionalQueryParamDecoderMatcher[Int]("days")
-  private object PeriodsParam  extends OptionalQueryParamDecoderMatcher[Int]("periods")
-  private object DryRunParam   extends OptionalQueryParamDecoderMatcher[Boolean]("dryRun")
-  private object ApplyParam    extends OptionalQueryParamDecoderMatcher[Boolean]("apply")
+  private object TagParam       extends OptionalMultiQueryParamDecoderMatcher[TagId]("tag")
+  private object CategoryParam  extends OptionalValidatingQueryParamDecoderMatcher[CategoryId]("category")
+  private object SearchParam    extends OptionalQueryParamDecoderMatcher[String]("q")
+  private object CurrencyParam  extends OptionalValidatingQueryParamDecoderMatcher[CurrencyCode]("currency")
+  private object KindParam      extends OptionalValidatingQueryParamDecoderMatcher[CategoryKind]("kind")
+  private object BucketParam    extends OptionalValidatingQueryParamDecoderMatcher[Bucket]("bucket")
+  private object MonthParam     extends OptionalValidatingQueryParamDecoderMatcher[YearMonth]("month")
+  private object DaysParam      extends OptionalQueryParamDecoderMatcher[Int]("days")
+  private object PeriodsParam   extends OptionalQueryParamDecoderMatcher[Int]("periods")
+  private object DryRunParam    extends OptionalQueryParamDecoderMatcher[Boolean]("dryRun")
+  private object ApplyParam     extends OptionalQueryParamDecoderMatcher[Boolean]("apply")
+  private object TransfersParam extends OptionalQueryParamDecoderMatcher[Boolean]("transfers")
 
   protected def failed(err: BudgetError): F[Response[F]] = {
     import BudgetError.*
@@ -159,6 +161,9 @@ final class BudgetRoutes[F[_]: Async](
 
     case req @ POST -> Root / "budget" / "tags" =>
       authed(req)(u => decoded[BudgetJson.TagBody](req)(b => money.createTag(u, b.name).flatMap(Created(_))))
+
+    case req @ PUT -> Root / "budget" / "tags" / TagIdVar(id) / "target" =>
+      authed(req)(u => decoded[BudgetJson.TagTargetBody](req)(b => money.setTagTarget(u, id, b.targetPct).flatMap(respond(_)(Ok(_)))))
 
     case req @ PUT -> Root / "budget" / "fx-rates" =>
       authed(req)(_ => decoded[List[FxQuote]](req)(rs => money.addRates(rs).flatMap(respond(_)(n => Ok(Map("saved" -> n).asJson)))))
@@ -321,13 +326,14 @@ final class BudgetRoutes[F[_]: Async](
     case req @ GET -> Root / "budget" / "insights" / "streak" =>
       authed(req)(u => today.flatMap(t => insights.streak(u, t).flatMap(Ok(_))))
 
-    case req @ GET -> Root / "budget" / "insights" / "tags" :? From(from) +& To(to) +& CurrencyParam(c) +& TagParam(tg) =>
+    case req @ GET -> Root / "budget" / "insights" / "tags" :? From(from) +& To(to) +& CurrencyParam(c) +& TagParam(tg) +&
+        TransfersParam(tr) =>
       authed(req)(u =>
         tg.fold(
           e => bad(e.head.sanitized),
           tags =>
             scoped(from, to, c, cats.data.Validated.validNel[ParseFailure, List[WalletId]](Nil))((p, ccy, _) =>
-              insights.tags(u, p, tags, ccy).flatMap(respond(_)(Ok(_)))
+              insights.tags(u, p, tags, ccy, tr.getOrElse(false)).flatMap(respond(_)(Ok(_)))
             )
         )
       )

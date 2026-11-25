@@ -98,6 +98,9 @@ object BudgetJson {
   final case class TagBody(name: Title)
   given Decoder[TagBody] = deriveDecoder
 
+  final case class TagTargetBody(targetPct: Option[BigDecimal])
+  given Decoder[TagTargetBody] = deriveDecoder
+
   final case class PayBody(date: Option[LocalDate], amountMinor: Option[Long])
   given Decoder[PayBody] = deriveDecoder
 }

@@ -61,7 +61,8 @@ final case class Category(
 /** A merchant or counterparty. Titles matching its name or an alias pick it up, and its default category with it. */
 final case class Payee(id: PayeeId, ownerId: UserId, name: Title, aliases: List[String], defaultCategoryId: Option[CategoryId])
 
-final case class Tag(id: TagId, ownerId: UserId, name: Title)
+/** `targetPct` is the most of income its spending should take, for the tag analysis. */
+final case class Tag(id: TagId, ownerId: UserId, name: Title, targetPct: Option[BigDecimal] = None)
 
 // ---------- Transactions ----------
 

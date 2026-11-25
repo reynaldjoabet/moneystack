@@ -4,6 +4,8 @@ import moneystack.domain.*
 import moneystack.platform.FxTable
 import Fixtures.*
 
+import io.circe.syntax.*
+
 import java.util.UUID
 
 /** Excluding transactions from stats, budget pace, rollover resets, period notes and tag analysis. */
@@ -78,6 +80,81 @@ class MoneyMatterFeaturesSuite extends munit.FunSuite {
         ("Trip", 10_000L, BigDecimal("71.43"), Some(BigDecimal("10.00"))),
         ("Work", 4_000L, BigDecimal("28.57"), Some(BigDecimal("4.00")))
       )
+    )
+  }
+
+  test("a rule can exclude from stats, and the action survives JSON") {
+    import RuleJson.given
+    val rule = Rule(
+      RuleId.assume(UUID.randomUUID()),
+      owner,
+      Title.applyUnsafe("Car sale"),
+      1,
+      enabled = true,
+      matchAll = true,
+      List(Condition.Text(TextField.Title, TextOp.ContainsAny, List("car"))),
+      List(Action.ExcludeFromStats),
+      0L,
+      java.time.Instant.EPOCH
+    )
+    assert(Rules.run(List(rule), tx(checking, TxKind.Income, 1, d(3, 2), title = "Sold the car"))._1.excludeFromStats)
+    assert(!Rules.run(List(rule), tx(checking, TxKind.Income, 1, d(3, 2), title = "Salary"))._1.excludeFromStats)
+    assertEquals((Action.ExcludeFromStats: Action).asJson.as[Action], Right(Action.ExcludeFromStats))
+    assert(Rules.validate(rule.conditions, List(Action.ExcludeFromStats, Action.ExcludeFromStats)).isLeft)
+  }
+
+  test("without history, pace puts scheduled payments on their dates and spreads the rest evenly") {
+    val rent =
+      schedule(Frequency.Monthly, d(1, 1)).copy(walletId = checking.id, amountMinor = 20_000, categoryId = Some(food.id), nextIndex = 3)
+    // March 20 is behind nextIndex without a payment, so it was skipped.
+    val gym =
+      schedule(Frequency.Monthly, d(1, 20)).copy(walletId = checking.id, amountMinor = 5_000, categoryId = Some(food.id), nextIndex = 3)
+    val tv    = schedule(Frequency.Monthly, d(1, 25)).copy(walletId = checking.id, amountMinor = 1_500)
+    val pay   = schedule(Frequency.Monthly, d(1, 28)).copy(walletId = checking.id, txKind = TxKind.Income, categoryId = Some(food.id))
+    val march = Period(d(3, 1), d(3, 31))
+    val paid  = Set(rent.id -> d(3, 1))
+    val plan  = Reports.planned(monthly, List(rent, gym, tv, pay), paid, march, cats, wallets, FxTable.empty).toOption.get
+    assertEquals(plan, List(d(3, 1) -> 20_000L), "only the rent: the gym was skipped, TV is another category, pay is income")
+
+    val spent = entries(List(tx(checking, TxKind.Expense, 21_000, d(3, 1), Some(food))))
+    val pace  = Reports.status(monthly, spent, cats, d(3, 10), planned = plan).get.pace.get
+    // (20,000 due + 10/31 of the other 10,000) / 30,000
+    assertEquals((pace.source, pace.expectedPct, pace.expectedMinor, pace.ahead), ("schedule", BigDecimal("77.42"), 23_226L, false))
+
+    val unpaid = Reports.planned(monthly, List(rent), Set.empty, march, cats, wallets, FxTable.empty).toOption.get
+    assertEquals(unpaid, Nil, "an occurrence behind nextIndex without a payment was skipped")
+    val upcoming = Reports.planned(monthly, List(rent.copy(nextIndex = 2)), Set.empty, march, cats, wallets, FxTable.empty).toOption.get
+    assertEquals(upcoming, List(d(3, 1) -> 20_000L), "an unpaid one still ahead counts")
+    assertEquals(
+      Reports.planned(monthly, List(rent.copy(nextIndex = 2, active = false)), Set.empty, march, cats, wallets, FxTable.empty),
+      Right(Nil),
+      "a paused schedule's unpaid ones don't"
+    )
+  }
+
+  test("tag targets compare the share of income; tagged transfers count when asked") {
+    val savings = wallet(kind = WalletKind.Savings)
+    val both    = wallets + (savings.id -> savings)
+    val save    = Tag(TagId.assume(UUID.randomUUID()), owner, Title.applyUnsafe("Savings"), Some(BigDecimal(20)))
+    val fun     = Tag(TagId.assume(UUID.randomUUID()), owner, Title.applyUnsafe("Fun"), Some(BigDecimal(10)))
+    val txs     = List(
+      tx(checking, TxKind.Income, 100_000, d(3, 1)),
+      tx(checking, TxKind.Expense, 12_000, d(3, 2), Some(food)).copy(tags = List(fun.id)),
+      tx(checking, TxKind.Transfer, 15_000, d(3, 3), to = Some(savings)).copy(tags = List(save.id)),
+      tx(savings, TxKind.Transfer, 1_000, d(3, 4), to = Some(checking)).copy(tags = List(save.id), excludeFromStats = true)
+    )
+    val es    = Reports.entries(txs, both, FxTable.empty, usd).toOption.get
+    val moved = Reports.transferEntries(txs, both, FxTable.empty, usd).toOption.get
+    val march = Period(d(3, 1), d(3, 31))
+    val shown = (xs: List[TagTotal]) => xs.map(t => (t.name, t.amountMinor, t.targetPct, t.overTarget))
+    assertEquals(
+      shown(Reports.byTag(es, march, List(save, fun))),
+      List(("Fun", 12_000L, Some(BigDecimal(10)), Some(true)), ("Savings", 0L, Some(BigDecimal(20)), Some(false)))
+    )
+    assertEquals(
+      shown(Reports.byTag(es ++ moved, march, List(save, fun))),
+      List(("Savings", 15_000L, Some(BigDecimal(20)), Some(false)), ("Fun", 12_000L, Some(BigDecimal(10)), Some(true))),
+      "the transfer to savings counts once; the excluded one not at all"
     )
   }
 }

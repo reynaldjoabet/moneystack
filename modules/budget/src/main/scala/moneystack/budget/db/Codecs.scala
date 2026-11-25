@@ -55,7 +55,7 @@ object Codecs {
 
   val payee: Codec[Payee] = (payeeId *: userId *: title *: texts *: categoryId.opt).to[Payee]
 
-  val tag: Codec[Tag] = (tagId *: userId *: title).to[Tag]
+  val tag: Codec[Tag] = (tagId *: userId *: title *: numeric(5, 2).opt).to[Tag]
 
   /** A transaction without its splits, which live in `transaction_splits`. */
   val transaction: Codec[Transaction] =

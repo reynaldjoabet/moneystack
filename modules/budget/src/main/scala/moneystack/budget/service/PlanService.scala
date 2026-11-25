@@ -175,22 +175,29 @@ object PlanService {
         plans.deleteBudget(owner, id).map(found => Either.cond(found, (), BudgetError.BudgetNotFound(id)))
 
       def budgets(owner: UserId, asOf: LocalDate): F[Either[BudgetError, List[BudgetView]]] =
-        (plans.budgets(owner).map(_.filterNot(_.archived)), plans.periodMarks(owner)).tupled.flatMap { (bs, marks) =>
-          // A budget reads its current period and the ones before it: one for rollover, up to 3 for the usual pace.
-          val periods = bs.flatMap(b =>
-            Periods.periodOf(b, asOf).toList.flatMap(p =>
-              Iterator.iterate(Option(p))(_.flatMap(Periods.previous(b, _))).takeWhile(_.isDefined).flatten.take(1 + Reports.PaceHistory)
-            )
-          )
-          val span    = Option.when(periods.nonEmpty)(Period(periods.map(_.from).min, periods.map(_.to).max))
-          val byStart = marks.groupBy(_.budgetId).view.mapValues(_.map(m => m.periodStart -> m).toMap).toMap
-          span.fold(loader.reference(owner))(loader.within(owner, _)).map { snap =>
-            bs.map(_.currency).distinct.traverse(c => snap.entries(c).map(c -> _)).map(_.toMap).map { byCurrency =>
-              bs.map(b =>
-                BudgetView(b, Reports.status(b, byCurrency(b.currency), snap.categories, asOf, byStart.getOrElse(b.id, Map.empty)))
+        (plans.budgets(owner).map(_.filterNot(_.archived)), plans.periodMarks(owner), plans.schedules(owner)).tupled.flatMap {
+          (bs, marks, schedules) =>
+            // A budget reads its current period and the ones before it: one for rollover, up to 3 for the usual pace.
+            val periods = bs.flatMap(b =>
+              Periods.periodOf(b, asOf).toList.flatMap(p =>
+                Iterator.iterate(Option(p))(_.flatMap(Periods.previous(b, _))).takeWhile(_.isDefined).flatten.take(1 + Reports.PaceHistory)
               )
+            )
+            val span    = Option.when(periods.nonEmpty)(Period(periods.map(_.from).min, periods.map(_.to).max))
+            val byStart = marks.groupBy(_.budgetId).view.mapValues(_.map(m => m.periodStart -> m).toMap).toMap
+            span.fold(loader.reference(owner))(loader.within(owner, _)).map { snap =>
+              val paid = snap.transactions.flatMap(t => (t.scheduleId, t.dueDate).tupled).toSet
+              bs.map(_.currency).distinct.traverse(c => snap.entries(c).map(c -> _)).map(_.toMap).flatMap { byCurrency =>
+                bs.traverse { b =>
+                  Periods.periodOf(b, asOf).fold(Right(Nil))(p =>
+                    Reports.planned(b, schedules, paid, p, snap.categories, snap.walletsById, snap.fx)
+                  ).map { planned =>
+                    val marks = byStart.getOrElse(b.id, Map.empty)
+                    BudgetView(b, Reports.status(b, byCurrency(b.currency), snap.categories, asOf, marks, planned))
+                  }
+                }
+              }
             }
-          }
         }
 
       /** The budget, if `owner` has it and `start` begins one of its periods. */

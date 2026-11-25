@@ -423,7 +423,7 @@ class BudgetIntegrationSuite extends moneystack.testkit.PostgresSuite[BudgetModu
       _      <- ok(money.updateTransaction(me, sold.id, txn(w, TxKind.Income, 900_000, d(3, 2), "Sold the old car")))
       sum    <- ok(env.insights.summary(me, march, usd, None))
       bal    <- ok(env.insights.balances(me, d(3, 31), usd))
-      tags   <- ok(env.insights.tags(me, march, Nil, usd))
+      tags   <- ok(env.insights.tags(me, march, Nil, usd, transfers = false))
       budget <- ok(plans.createBudget(
         me,
         PlanService.NewBudget(
@@ -459,6 +459,98 @@ class BudgetIntegrationSuite extends moneystack.testkit.PostgresSuite[BudgetModu
       val st = views.find(_.budget.id == budget.id).get.status.get
       assertEquals((st.note, st.rolloverReset, st.rolloverMinor), (Some("Holiday month, edited"), true, 0L), "the note kept the reset")
       assert(st.pace.isDefined)
+    }
+  }
+
+  test("a rule excludes from stats unless the author says otherwise; tag targets, transfers, and pace from schedules") {
+    val me    = newUser
+    val march = Period(d(3, 1), d(3, 31))
+    for {
+      w    <- wallet(me, "Checking")
+      sav  <- wallet(me, "Savings", kind = WalletKind.Savings)
+      food <- category(me, "Groceries")
+      _    <- ok(money.createRule(
+        me,
+        NewRule(
+          t("Car sale"),
+          None,
+          None,
+          List(Condition.Text(TextField.Title, TextOp.ContainsAny, List("car"))),
+          List(Action.ExcludeFromStats)
+        )
+      ))
+      ruled  <- ok(money.addTransaction(me, txn(w, TxKind.Income, 900_000, d(3, 2), "Sold the car")))
+      chosen <-
+        ok(money.addTransaction(me, txn(w, TxKind.Income, 5_000, d(3, 2), "Car wash refund").copy(excludeFromStats = Some(false))))
+      edited <- ok(money.updateTransaction(me, ruled.id, txn(w, TxKind.Income, 900_000, d(3, 2), "Sold the old car")))
+      _      <- ok(money.addTransaction(me, txn(w, TxKind.Income, 100_000, d(3, 1), "Salary")))
+      save   <- money.createTag(me, t("Savings"))
+      _      <- ok(money.addTransaction(
+        me,
+        txn(w, TxKind.Transfer, 15_000, d(3, 3), "To savings", to = Some(sav)).copy(tags = Some(List(save.id)))
+      ))
+      tooBig <- money.setTagTarget(me, save.id, Some(BigDecimal(101)))
+      _      <- failsWith(money.setTagTarget(newUser, save.id, Some(BigDecimal(5)))) { case BudgetError.TagNotFound(_) => }
+      target <- ok(money.setTagTarget(me, save.id, Some(BigDecimal("12.50"))))
+      listed <- money.tags(me)
+      plain  <- ok(env.insights.tags(me, march, List(save.id), usd, transfers = false))
+      moved  <- ok(env.insights.tags(me, march, List(save.id), usd, transfers = true))
+      _      <- ok(plans.createSchedule(
+        me,
+        PlanService.NewSchedule(
+          ScheduleKind.Bill,
+          t("Rent"),
+          w.id,
+          TxKind.Expense,
+          20_000,
+          Some(food.id),
+          None,
+          None,
+          Frequency.Monthly,
+          None,
+          d(3, 20),
+          None,
+          None,
+          Some(false),
+          None
+        )
+      ))
+      budget <- ok(plans.createBudget(
+        me,
+        PlanService.NewBudget(
+          t("Food"),
+          30_000,
+          usd,
+          Recurrence.Monthly,
+          None,
+          d(3, 1),
+          None,
+          None,
+          Some(List(food.id)),
+          None,
+          None,
+          None,
+          None,
+          None
+        )
+      ))
+      views <- ok(plans.budgets(me, d(3, 10)))
+    } yield {
+      assert(ruled.excludeFromStats, "the rule excluded the sale")
+      assert(!chosen.excludeFromStats, "an explicit false beats the rule")
+      assert(edited.excludeFromStats, "an edit that leaves the flag out keeps it")
+      assert(tooBig.isLeft)
+      assertEquals(target.targetPct, Some(BigDecimal("12.50")))
+      assertEquals(listed.find(_.id == save.id).flatMap(_.targetPct), Some(BigDecimal("12.50")), "the target is stored")
+      assertEquals(plain.map(_.amountMinor), List(0L))
+      // Income counts the salary and the refund the author kept in: 105,000; 15,000 of it is 14.29%.
+      assertEquals(
+        moved.map(t => (t.amountMinor, t.pctOfIncome, t.overTarget)),
+        List((15_000L, Some(BigDecimal("14.29")), Some(true)))
+      )
+      val pace = views.find(_.budget.id == budget.id).get.status.get.pace.get
+      // Rent of 20,000 isn't due until the 20th: 10/31 of the other 10,000 by the 10th.
+      assertEquals((pace.source, pace.expectedMinor), ("schedule", 3_226L))
     }
   }
 

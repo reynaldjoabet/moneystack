@@ -3,6 +3,8 @@ package moneystack.budget.domain
 import moneystack.domain.*
 import moneystack.platform.FxTable
 
+import cats.syntax.all.*
+
 import java.time.{DayOfWeek, LocalDate, YearMonth}
 import java.time.temporal.{ChronoUnit, TemporalAdjusters}
 import scala.math.BigDecimal.RoundingMode
@@ -112,15 +114,29 @@ final case class BudgetStatus(
 )
 
 /**
- * Where spending would usually be by today in the current period. `expectedMinor` is the share of the available
- * amount that past periods had spent by the same point (`source` = history, the median of up to 3 periods with
- * spending), or the share of days elapsed without that history (`source` = even). `aheadMinor` is how far spending
- * runs ahead of it.
+ * Where spending would usually be by today in the current period, as a share of the available amount. The first of
+ * these that applies sets it (`source`):
+ *   - history: the median share that up to 3 past periods with spending had spent by the same point (needs 2);
+ *   - schedule: the budget's scheduled payments due by today, plus the share of days elapsed of whatever the
+ *     scheduled payments leave of the available amount;
+ *   - even: the share of days elapsed.
+ * `aheadMinor` is how far spending runs ahead of `expectedMinor`.
  */
 final case class Pace(source: String, expectedPct: BigDecimal, expectedMinor: Long, aheadMinor: Long, ahead: Boolean)
 
-/** Spending under one tag; a transaction with several of the asked tags counts under each. */
-final case class TagTotal(tagId: TagId, name: String, amountMinor: Long, pctOfTags: BigDecimal, pctOfIncome: Option[BigDecimal])
+/**
+ * Spending under one tag; a transaction with several of the asked tags counts under each. `overTarget` compares
+ * `pctOfIncome` with the tag's target, when there is both.
+ */
+final case class TagTotal(
+    tagId: TagId,
+    name: String,
+    amountMinor: Long,
+    pctOfTags: BigDecimal,
+    pctOfIncome: Option[BigDecimal],
+    targetPct: Option[BigDecimal] = None,
+    overTarget: Option[Boolean] = None
+)
 
 /** For goals `amountMinor` is saved; for loans it is outstanding. */
 final case class ObjectiveProgress(
@@ -183,6 +199,22 @@ object Reports {
       }
     }.map(_.reverse)
   }
+
+  /**
+   * Tagged transfers as spending from the wallet they leave, for a tag analysis that counts money moved to savings.
+   * Only transfers out of one of `wallets` count, so a transfer between two of them counts once.
+   */
+  def transferEntries(
+      txs: List[Transaction],
+      wallets: Map[WalletId, Wallet],
+      fx: FxTable,
+      currency: CurrencyCode
+  ): Either[BudgetError, List[Entry]] =
+    txs.filter(t => t.kind == TxKind.Transfer && t.tags.nonEmpty && !t.excludeFromStats).flatMap(t => wallets.get(t.walletId).map(t -> _))
+      .traverse { case (t, w) =>
+        convert(fx, t.amountMinor, w.currency, currency, t.date)
+          .map(a => Entry(t.id, t.date, t.walletId, CategoryKind.Expense, None, t.payeeId, a, t.excludedBudgets, t.tags))
+      }
 
   private def within(es: List[Entry], p: Period) = es.filter(e => p.contains(e.date))
 
@@ -353,14 +385,16 @@ object Reports {
 
   /**
    * The budget's period containing `asOf`. `marks` are what the user set on its periods, by first day: a reset
-   * period starts without the previous one's rollover. `es` must cover up to 3 periods before for the pace.
+   * period starts without the previous one's rollover. `es` must cover up to 3 periods before for the pace, and
+   * `planned` holds the budget's scheduled payments in the period (see [[planned]]).
    */
   def status(
       b: Budget,
       es: List[Entry],
       categories: List[Category],
       asOf: LocalDate,
-      marks: Map[LocalDate, BudgetPeriodMark] = Map.empty
+      marks: Map[LocalDate, BudgetPeriodMark] = Map.empty,
+      planned: List[(LocalDate, Long)] = Nil
   ): Option[BudgetStatus] =
     Periods.periodOf(b, asOf).map { p =>
       val mark     = marks.get(p.from)
@@ -400,7 +434,7 @@ object Reports {
         catRows,
         mark.flatMap(_.note),
         reset,
-        pace(b, es, categories, p, asOf, available, spent)
+        pace(b, es, categories, p, asOf, available, spent, planned)
       )
     }
 
@@ -412,7 +446,16 @@ object Reports {
   val PaceHistory = 3
 
   /** See [[Pace]]. Only for the period containing `asOf`, with something available to spend. */
-  def pace(b: Budget, es: List[Entry], categories: List[Category], p: Period, asOf: LocalDate, available: Long, spent: Long): Option[Pace] =
+  def pace(
+      b: Budget,
+      es: List[Entry],
+      categories: List[Category],
+      p: Period,
+      asOf: LocalDate,
+      available: Long,
+      spent: Long,
+      planned: List[(LocalDate, Long)] = Nil
+  ): Option[Pace] =
     Option.when(p.contains(asOf) && available > 0) {
       val share   = elapsedShare(p, asOf)
       val earlier = Iterator.iterate(Periods.previous(b, p))(_.flatMap(Periods.previous(b, _))).takeWhile(_.isDefined).flatten
@@ -427,8 +470,15 @@ object Reports {
           (BigDecimal(byThen) / total).max(0).min(1)
         }
       }
+      val inPeriod           = planned.filter { case (d, _) => p.contains(d) }
+      val plannedTotal       = inPeriod.map(_._2).sum
       val (source, expected) =
-        if (shares.size >= 2) ("history", median(shares)) else ("even", share)
+        if (shares.size >= 2) ("history", median(shares))
+        else if (plannedTotal > 0) {
+          val dueByNow = inPeriod.collect { case (d, a) if !d.isAfter(asOf) => a }.sum
+          val rest     = BigDecimal((available - plannedTotal).max(0L)) * share
+          ("schedule", ((BigDecimal(dueByNow) + rest) / available).min(1))
+        } else ("even", share)
       val expectedMinor = minor(expected * available)
       Pace(
         source,
@@ -445,6 +495,37 @@ object Reports {
   }
 
   /**
+   * `b`'s scheduled payments due in `p`, in its currency, by due date: the schedules of its kind on its wallets and
+   * categories. A paid occurrence (in `paid`, by schedule and due date) counts even if the schedule has since been
+   * paused; an unpaid one only while it is active and not yet passed over; a skipped one not at all.
+   */
+  def planned(
+      b: Budget,
+      schedules: List[Schedule],
+      paid: Set[(ScheduleId, LocalDate)],
+      p: Period,
+      categories: List[Category],
+      wallets: Map[WalletId, Wallet],
+      fx: FxTable
+  ): Either[BudgetError, List[(LocalDate, Long)]] = {
+    val kind     = if (b.income) TxKind.Income else TxKind.Expense
+    val included = expand(b.categoryIds, categories)
+    val excluded = expand(b.excludedCategoryIds, categories)
+    val mine     = schedules.filter { s =>
+      s.txKind == kind &&
+      (b.walletIds.isEmpty || b.walletIds.contains(s.walletId)) &&
+      (b.categoryIds.isEmpty || s.categoryId.exists(included.contains)) &&
+      !s.categoryId.exists(excluded.contains)
+    }
+    mine.flatTraverse { s =>
+      val ccy = wallets.get(s.walletId).fold(b.currency)(_.currency)
+      Iterator.from(0).map(n => n -> Periods.due(s, n)).takeWhile { case (_, d) => d.exists(!_.isAfter(p.to)) }
+        .collect { case (n, Some(d)) if p.contains(d) && (paid((s.id, d)) || (s.active && n >= s.nextIndex)) => d }.toList
+        .traverse(d => convert(fx, s.amountMinor, ccy, b.currency, d).map(d -> _))
+    }
+  }
+
+  /**
    * Spending in `p` under each of `tags`, as a share of those tags' spending and of income. A refund lowers its
    * tag's total; a transaction tagged with several of `tags` counts under each.
    */
@@ -455,12 +536,15 @@ object Reports {
     val totals   = tags.map(t => t -> spending.filter(_.tags.contains(t.id)).map(_.amountMinor).sum)
     val all      = totals.map(_._2).sum
     totals.map { case (t, amt) =>
+      val ofIncome = Option.when(income > 0)(pct(BigDecimal(amt), BigDecimal(income)))
       TagTotal(
         t.id,
         t.name.value,
         amt,
         pct(BigDecimal(amt), BigDecimal(all)),
-        Option.when(income > 0)(pct(BigDecimal(amt), BigDecimal(income)))
+        ofIncome,
+        t.targetPct,
+        (ofIncome, t.targetPct).mapN(_ > _)
       )
     }.sortBy(-_.amountMinor)
   }

@@ -34,6 +34,9 @@ trait MoneyService[F[_]] {
   def createPayee(owner: UserId, b: MoneyService.NewPayee): F[Either[BudgetError, Payee]]
   def tags(owner: UserId): F[List[Tag]]
   def createTag(owner: UserId, name: Title): F[Tag]
+
+  /** The most of income the tag's spending should take, as a percentage with up to 2 decimals; `None` clears it. */
+  def setTagTarget(owner: UserId, id: TagId, pct: Option[BigDecimal]): F[Either[BudgetError, Tag]]
   def addRates(rs: List[FxQuote]): F[Either[BudgetError, Int]]
 
   def transactions(user: UserId, filter: MoneyService.Filter): F[List[Transaction]]
@@ -244,6 +247,11 @@ object MoneyService {
           ts.find(_.name == name).fold(uuid.flatMap(id => catalog.createTag(Tag(TagId.assume(id), owner, name))))(Async[F].pure)
         )
 
+      def setTagTarget(owner: UserId, id: TagId, pct: Option[BigDecimal]): F[Either[BudgetError, Tag]] =
+        if (pct.exists(p => p <= 0 || p > 100 || p.scale > 2))
+          Async[F].pure(Left(BudgetError.Invalid("a target is a percentage above 0, at most 100, with up to 2 decimals")))
+        else catalog.setTagTarget(owner, id, pct).map(_.toRight(BudgetError.TagNotFound(id)))
+
       def addRates(rs: List[FxQuote]): F[Either[BudgetError, Int]] =
         if (rs.exists(r => r.from == r.to || r.rate <= 0))
           Async[F].pure(Left(BudgetError.Invalid("rates need two currencies and a positive rate")))
@@ -351,10 +359,11 @@ object MoneyService {
             b.excludedBudgets.getOrElse(Nil).distinct,
             existingKey,
             owner,
-            createdAt,
-            b.excludeFromStats.getOrElse(false)
+            createdAt
           )
-          Rules.run(rules, draft)._1
+          // As with categories, what the author chose beats a rule.
+          val ruled = Rules.run(rules, draft)._1
+          ruled.copy(excludeFromStats = b.excludeFromStats.getOrElse(ruled.excludeFromStats))
         }
 
       def addTransaction(owner: UserId, b: NewTransaction): F[Either[BudgetError, Transaction]] =
@@ -379,7 +388,8 @@ object MoneyService {
               t.copy(
                 scheduleId = old.scheduleId,
                 dueDate = old.dueDate,
-                excludeFromStats = b.excludeFromStats.getOrElse(old.excludeFromStats)
+                // Left out, an edit keeps an earlier exclusion and takes one from a rule.
+                excludeFromStats = b.excludeFromStats.getOrElse(old.excludeFromStats || t.excludeFromStats)
               )
             ),
             BudgetError.TransactionNotFound(id): BudgetError
@@ -414,7 +424,7 @@ object MoneyService {
             case Action.SetCategory(c) => check(cs.exists(_.id == c), BudgetError.CategoryNotFound(c))
             case Action.SetPayee(p)    => check(ps.exists(_.id == p), BudgetError.PayeeNotFound(p))
             case Action.AddTags(ids)   => ids.traverse_(t => check(ts.exists(_.id == t), BudgetError.TagNotFound(t)))
-            case Action.SetNote(_, _)  => EitherT.rightT[F, BudgetError](())
+            case Action.SetNote(_, _) | Action.ExcludeFromStats => EitherT.rightT[F, BudgetError](())
           }
           rs   <- lift(plans.rules(owner))
           id   <- lift(uuid)

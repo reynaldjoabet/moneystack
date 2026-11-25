@@ -60,15 +60,17 @@ object RuleJson {
     case Action.AddTags(ids)     => Json.obj("type" -> "add_tags".asJson, "tagIds" -> ids.asJson)
     case Action.SetPayee(id)     => Json.obj("type" -> "set_payee".asJson, "payeeId" -> id.asJson)
     case Action.SetNote(mode, v) => Json.obj("type" -> "set_note".asJson, "mode" -> mode.asJson, "value" -> v.asJson)
+    case Action.ExcludeFromStats => Json.obj("type" -> "exclude_from_stats".asJson)
   }
 
   given Decoder[Action] = Decoder.instance { c =>
     c.get[String]("type").flatMap {
-      case "set_category" => c.get[CategoryId]("categoryId").map(Action.SetCategory.apply)
-      case "add_tags"     => c.get[List[TagId]]("tagIds").map(Action.AddTags.apply)
-      case "set_payee"    => c.get[PayeeId]("payeeId").map(Action.SetPayee.apply)
-      case "set_note"     => (c.get[NoteMode]("mode"), c.get[String]("value")).mapN(Action.SetNote.apply)
-      case other          => Left(DecodingFailure(s"unknown action type: $other", c.history))
+      case "set_category"       => c.get[CategoryId]("categoryId").map(Action.SetCategory.apply)
+      case "add_tags"           => c.get[List[TagId]]("tagIds").map(Action.AddTags.apply)
+      case "set_payee"          => c.get[PayeeId]("payeeId").map(Action.SetPayee.apply)
+      case "set_note"           => (c.get[NoteMode]("mode"), c.get[String]("value")).mapN(Action.SetNote.apply)
+      case "exclude_from_stats" => Right(Action.ExcludeFromStats)
+      case other                => Left(DecodingFailure(s"unknown action type: $other", c.history))
     }
   }
 
